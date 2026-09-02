@@ -647,3 +647,10 @@
   border-color: var(--alert);
   color: var(--alert);
 }
+
+.build-id {
+  margin-top: var(--gap-l);
+  color: var(--ink-faint);
+  font-size: var(--step--1);
+  text-align: center;
+}

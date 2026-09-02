@@ -185,6 +185,12 @@ export function AdminMembers() {
           {linkError}
         </p>
       )}
+
+      {/* The running build, so a QA pass can prove a reload actually landed on
+          a new version rather than re-rendering the old one. */}
+      <p className="build-id">
+        build <span className="tabular">{typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'}</span>
+      </p>
     </div>
   )
 }
