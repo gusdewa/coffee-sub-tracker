@@ -87,6 +87,11 @@ jobs:
           app-name: ${{ env.APP_NAME }}
           package: deploy
 
+      # The app may be stopped (for example after invalid content was quarantined).
+      # Deploying does not start it, so make the running state part of the deploy.
+      - name: Ensure the app is running
+        run: az webapp start -n "$APP_NAME" -g "$RESOURCE_GROUP"
+
       - name: Deployment provenance
         run: |
           echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
