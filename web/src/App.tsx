@@ -1,7 +1,7 @@
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from './auth/useAuth'
-import { api, hasQaSession } from './api/client'
+import { api, hasQaSession, ApiError } from './api/client'
 import { signInWithGoogle, signOut } from './auth/firebase'
 import { MyCoffee } from './screens/MyCoffee'
 import { AllBalances } from './screens/AllBalances'
@@ -9,6 +9,7 @@ import { Subscriptions } from './screens/Subscriptions'
 import { History } from './screens/History'
 import { QaRedeem } from './screens/QaRedeem'
 import { AdminMembers } from './screens/AdminMembers'
+import { ClaimIdentity } from './screens/ClaimIdentity'
 import { OfflineBanner } from './components/OfflineBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useServiceWorker } from './pwa/useServiceWorker'
@@ -55,13 +56,21 @@ export function App() {
   const location = useLocation()
   const [isAdmin, setIsAdmin] = useState(false)
   const [qaActive, setQaActive] = useState(hasQaSession())
+  // A verified account with no member yet is not an error — it can claim one.
+  const [unbound, setUnbound] = useState(false)
   const sw = useServiceWorker()
 
   useEffect(() => {
     if (!user && !qaActive) return
     api.me()
-      .then((me) => setIsAdmin(me.member.role === 'admin'))
-      .catch(() => setIsAdmin(false))
+      .then((me) => {
+        setIsAdmin(me.member.role === 'admin')
+        setUnbound(false)
+      })
+      .catch((err) => {
+        setIsAdmin(false)
+        setUnbound(err instanceof ApiError && err.code === 'ACCOUNT_UNBOUND')
+      })
   }, [user, qaActive])
   const isQaRoute = location.pathname.startsWith('/qa')
 
@@ -70,6 +79,17 @@ export function App() {
   // The QA route must run even when signed out — redeeming is what signs you in.
   // A redeemed QA session stands in for a signed-in user.
   if (!user && !qaActive && !isQaRoute) return <SignIn />
+
+  // Signed in, but this Google account is not yet linked to anyone.
+  if (unbound) {
+    return (
+      <div className="app">
+        <main className="app__main">
+          <ClaimIdentity onBound={() => window.location.reload()} />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="app">

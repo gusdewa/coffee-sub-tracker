@@ -254,6 +254,13 @@ export interface LinkEmailInput {
   email: string
   opId: string
   allowedDomain: string
+  /**
+   * How the link came about. A self-claim is a person binding their own
+   * freshly signed-in account; an admin link is someone doing it on their
+   * behalf. Both are audited, and the distinction is what lets an admin review
+   * self-claims without wading through their own actions.
+   */
+  via?: 'admin' | 'self'
 }
 
 /**
@@ -307,6 +314,8 @@ export async function linkMemberEmail(deps: RosterDeps, input: LinkEmailInput): 
         partitionKey: ROSTER_PARTITION,
         rowKey: linkAuditRowKey(at, input.opId),
         kind: 'link-audit',
+        action: 'link',
+        via: input.via ?? 'admin',
         actorMemberId: input.actorMemberId,
         memberId: input.memberId,
         email,
@@ -329,6 +338,8 @@ export async function linkMemberEmail(deps: RosterDeps, input: LinkEmailInput): 
 }
 
 export interface LinkAuditEntry {
+  action: 'link' | 'unlink'
+  via: 'admin' | 'self'
   actorMemberId: string
   memberId: string
   email: string
@@ -346,6 +357,8 @@ export async function listLinkAudit(deps: RosterDeps): Promise<LinkAuditEntry[]>
   for await (const e of iter) {
     const r = e as Record<string, unknown>
     out.push({
+      action: (String(r.action ?? 'link') as 'link' | 'unlink'),
+      via: (String(r.via ?? 'admin') as 'admin' | 'self'),
       actorMemberId: String(r.actorMemberId ?? ''),
       memberId: String(r.memberId ?? ''),
       email: String(r.email ?? ''),
@@ -353,4 +366,68 @@ export async function listLinkAudit(deps: RosterDeps): Promise<LinkAuditEntry[]>
     })
   }
   return out
+}
+
+/**
+ * Admin override: detach an address from a member.
+ *
+ * This is the correction path for a self-claim that went to the wrong person.
+ * It frees the address so it can be claimed again, and it deletes the index row
+ * rather than tombstoning it — a stale index row would keep the address
+ * permanently unusable. The member keeps its id, so its ledger partition and
+ * balance survive the correction untouched.
+ */
+export async function unlinkMemberEmail(
+  deps: RosterDeps,
+  input: { actorMemberId: string; memberId: string; opId: string },
+): Promise<void> {
+  let row: Record<string, unknown>
+  try {
+    row = (await deps.members.getEntity(
+      ROSTER_PARTITION,
+      memberRowKey(input.memberId),
+    )) as Record<string, unknown>
+  } catch (err) {
+    if (isNotFound(err)) throw new MemberNotFoundError()
+    throw err
+  }
+
+  const current = toMember(row)
+  if (!current.email) return // already unlinked; nothing to correct
+
+  const at = new Date()
+  // The member update and the audit entry commit together. The index row is
+  // removed separately because a delete cannot share an entity-group
+  // transaction with a conditional update on a different row key here without
+  // pinning both ETags, and the index is derivable from the member row.
+  await deps.members.submitTransaction([
+    [
+      'update',
+      { partitionKey: ROSTER_PARTITION, rowKey: memberRowKey(input.memberId), email: '' },
+      'Merge',
+      { etag: String(row.etag) },
+    ],
+    [
+      'create',
+      {
+        partitionKey: ROSTER_PARTITION,
+        rowKey: linkAuditRowKey(at, input.opId),
+        kind: 'link-audit',
+        action: 'unlink',
+        via: 'admin',
+        actorMemberId: input.actorMemberId,
+        memberId: input.memberId,
+        email: current.email,
+        createdAt: at,
+      },
+    ],
+  ])
+
+  await deps.members
+    .deleteEntity(ROSTER_PARTITION, emailIndexRowKey(current.email))
+    .catch((err: unknown) => {
+      if (!isNotFound(err)) throw err
+    })
+
+  deps.cache?.clear()
 }

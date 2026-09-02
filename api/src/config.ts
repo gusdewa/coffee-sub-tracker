@@ -17,7 +17,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const isProduction = env.NODE_ENV === 'production'
   const cfg: Config = {
     port: Number(env.PORT ?? 8080),
-    firebaseProjectId: env.FIREBASE_PROJECT_ID ?? 'srx-co-id',
+    firebaseProjectId: env.FIREBASE_PROJECT_ID ?? 'coffee-sub-tracker-f4551d',
     allowedEmailDomain: env.ALLOWED_EMAIL_DOMAIN ?? 'gmail.com',
     allowedOrigin: env.ALLOWED_ORIGIN ?? 'https://gusdewa.github.io',
     storageAccountName: env.STORAGE_ACCOUNT_NAME,

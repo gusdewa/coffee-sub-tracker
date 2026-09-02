@@ -142,6 +142,17 @@ export interface LinkAuditEntry {
   createdAt: string
 }
 
+export interface ClaimCandidate {
+  memberId: string
+  displayName: string
+}
+
+export interface ClaimOptions {
+  bound: boolean
+  candidates?: ClaimCandidate[]
+  prediction?: { memberId?: string; confidence: number }
+}
+
 export interface BatchRow {
   batchId: string
   label: string
@@ -158,6 +169,11 @@ export const api = {
   history: () => request<{ items: HistoryItem[] }>('/api/me/history'),
   balances: () => request<{ balances: BalanceRow[] }>('/api/balances'),
   batches: () => request<{ batches: BatchRow[] }>('/api/batches'),
+  claimOptions: () => request<ClaimOptions>('/api/claim/options'),
+  claim: (memberId: string, key: string) =>
+    request<{ bound: boolean }>('/api/claim', { method: 'POST', body: JSON.stringify({ memberId }) }, key),
+  adminUnlink: (memberId: string, key: string) =>
+    request<{ unlinked: boolean }>(`/api/admin/members/${memberId}/unlink-email`, { method: 'POST' }, key),
   adminMembers: () => request<{ members: MemberRow[] }>("/api/admin/members"),
   adminLinkEmail: (memberId: string, email: string, key: string) =>
     request<{ linked: boolean }>(

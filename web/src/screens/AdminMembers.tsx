@@ -49,6 +49,22 @@ export function AdminMembers() {
     void load()
   }, [])
 
+  const unlink = async (member: MemberRow) => {
+    // The correction path for a claim that went to the wrong person. The member
+    // keeps its id, so its balance and history survive untouched.
+    setBusy(true)
+    setLinkError(null)
+    try {
+      await api.adminUnlink(member.memberId, crypto.randomUUID())
+      setAnnouncement(`${member.displayName} unlinked.`)
+      await load()
+    } catch (err) {
+      setLinkError(explainLinkError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const link = async (member: MemberRow) => {
     const email = draft.trim()
     if (!email) return
@@ -148,7 +164,17 @@ export function AdminMembers() {
                 </button>
               )
             ) : (
-              <span className="person__email">{m.email}</span>
+              <span className="person__linked">
+                <span className="person__email">{m.email}</span>
+                <button
+                  type="button"
+                  className="person__unlink"
+                  onClick={() => void unlink(m)}
+                  disabled={busy}
+                >
+                  Unlink
+                </button>
+              </span>
             )}
           </li>
         ))}

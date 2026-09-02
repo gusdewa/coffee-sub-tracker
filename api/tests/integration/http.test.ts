@@ -14,7 +14,7 @@ import { UnauthenticatedError } from '../../src/auth/verifyFirebaseToken.js'
 
 process.env.AZURE_TABLES_CONNECTION_STRING ??= azuriteConnectionString()
 
-const DOMAIN = 'srx.co.id'
+const DOMAIN = 'gmail.com'
 const ORIGIN = 'https://gusdewa.github.io'
 
 let ledger: TableClient

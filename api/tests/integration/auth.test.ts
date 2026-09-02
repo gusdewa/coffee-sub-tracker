@@ -12,6 +12,7 @@ import {
   requireAdmin,
   WrongDomainError,
   NotAllowlistedError,
+  UnboundAccountError,
   MemberDisabledError,
   AdminRequiredError,
   QaScopeDeniedError,
@@ -19,8 +20,8 @@ import {
 
 process.env.AZURE_TABLES_CONNECTION_STRING ??= azuriteConnectionString()
 
-const PROJECT_ID = 'srx-co-id'
-const DOMAIN = 'srx.co.id'
+const PROJECT_ID = 'coffee-sub-tracker-f4551d'
+const DOMAIN = 'gmail.com'
 const OPTS = { allowedEmailDomain: DOMAIN }
 
 let members: TableClient
@@ -113,10 +114,10 @@ describe('token verification rejects malformed identity', () => {
   })
 
   test('a valid token is accepted and its claims surfaced', async () => {
-    const t = await mintToken({ sub: 'uid-1', email: 'a@srx.co.id', emailVerified: true })
+    const t = await mintToken({ sub: 'uid-1', email: 'a@gmail.com', emailVerified: true })
     const v = await verify(t)
     expect(v.uid).toBe('uid-1')
-    expect(v.email).toBe('a@srx.co.id')
+    expect(v.email).toBe('a@gmail.com')
     expect(v.emailVerified).toBe(true)
     expect(v.signInProvider).toBe('google.com')
     expect(v.qa).toBe(false)
@@ -140,9 +141,13 @@ describe('authorization gates (plan §5)', () => {
     expect(ctx.isQa).toBe(false)
   })
 
-  test('an address outside the workspace domain is refused', async () => {
-    const t = await verify(await mintToken({ sub: 'u', email: 'someone@gmail.com', emailVerified: true }))
-    await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(WrongDomainError)
+  test('an address outside the permitted domain is refused', async () => {
+    // Members sign in with a personal Google account, so anything that is not
+    // @gmail.com is rejected before the roster is even consulted.
+    for (const outside of ['someone@example.com', 'someone@sinarmas-agri.com', 'someone@googlemail.com']) {
+      const t = await verify(await mintToken({ sub: 'u', email: outside, emailVerified: true }))
+      await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(WrongDomainError)
+    }
   })
 
   test('an unverified email is refused even on the right domain', async () => {
@@ -157,11 +162,14 @@ describe('authorization gates (plan §5)', () => {
     await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(WrongDomainError)
   })
 
-  test('a valid domain account that is not on the roster is refused', async () => {
-    const t = await verify(await mintToken({
-      sub: 'u', email: `stranger-${randomUUID()}@${DOMAIN}`, emailVerified: true,
-    }))
-    await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(NotAllowlistedError)
+  test('a valid Gmail with no member yet is unbound, not forbidden', async () => {
+    // Recoverable rather than a dead end: this account may belong to a pending
+    // member and can claim that identity. The error carries the verified
+    // address so the claim flow never trusts a client-supplied one.
+    const email = `stranger-${randomUUID()}@${DOMAIN}`
+    const t = await verify(await mintToken({ sub: 'u', email, emailVerified: true }))
+    await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(UnboundAccountError)
+    await expect(authorize(deps, t, OPTS)).rejects.toMatchObject({ email })
   })
 
   test('a disabled member is refused', async () => {

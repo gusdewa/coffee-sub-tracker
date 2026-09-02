@@ -103,10 +103,10 @@ Getting this wrong invalidates evidence, so it is stated once, here.
 | **Chrome, normal profile** | `gusdewa@gmail.com` | **Authoritative real-SSO validation**: first login and member binding, Dewa admin flows, auth persistence across restart, logout/login, production PWA install/update QA |
 | **Chrome, separate/incognito context** | none (synthetic) | QA-link sessions — short-lived, one-time, revocable, non-admin |
 | **Chrome DevTools MCP** | none — **its own isolated profile** | Automated synthetic QA only. It is *not* the real profile, so nothing it captures counts as real-SSO evidence |
-| **Firefox** | SRX/contact Google account with **Firebase project admin** | Firebase Console clicks *only*, and only when the CLI / Identity Toolkit Admin API cannot enable Google Auth or authorized domains |
+| **Firefox** | the Firebase **project-administration** Google account | Firebase Console clicks *only*, and only when the CLI / Identity Toolkit Admin API cannot enable Google Auth or authorized domains |
 
-**Two rules that follow.** The SRX/contact Gmail is a project-administration
-identity and must **never** be seeded as a coffee member. And every screenshot is
+**Two rules that follow.** The project-administration Google account exists to
+administer Firebase and must **never** be seeded as a coffee member. And every screenshot is
 labelled with the surface that produced it — synthetic QA evidence is never
 presented as real-SSO evidence.
 
@@ -249,10 +249,10 @@ bearer token is ever minted; QA sessions stay opaque, one-time, short-lived, rev
 
 ## 8. Risks and open questions
 
-- **Firebase Auth is still not initialised on `srx-co-id`.** Clicking sign-in returns
-  `CONFIGURATION_NOT_FOUND` — proven in-browser. Until Google sign-in is enabled and
-  `gusdewa.github.io` is an authorized domain, **C1–C4 cannot be verified end-to-end**
-  and admin QA as Dewa is impossible. This gates G6 and workstream E's QA.
+- **Firebase Auth is live** on `coffee-sub-tracker-f4551d`: the Google provider is enabled with an
+  OAuth client, and `gusdewa.github.io` is an authorized domain. Real-SSO validation
+  is therefore unblocked, and must be performed in Chrome's normal profile as
+  `gusdewa@gmail.com` — the DevTools MCP profile cannot produce that evidence.
 - `firebase/auth` dominates the bundle; if the budget in G2 proves tight, the lever is
   lazy-loading the auth module on the sign-in path, not dropping the SW.
 - iOS gives no eviction duration, so G6's "survives restart" is verifiable but

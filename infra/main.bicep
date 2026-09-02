@@ -23,7 +23,7 @@ param logAnalyticsName string = 'simo-digitalassets-logs'
 param keyVaultName string = 'kv-simo-coffeesub-dev'
 
 param location string = resourceGroup().location
-param firebaseProjectId string = 'srx-co-id'
+param firebaseProjectId string = 'coffee-sub-tracker-f4551d'
 param allowedEmailDomain string = 'gmail.com'
 param allowedOrigin string = 'https://gusdewa.github.io'
 param undoWindowSeconds int = 90

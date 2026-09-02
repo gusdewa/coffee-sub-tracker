@@ -47,9 +47,17 @@ describe('append-only ledger (plan §10.5, acceptance 11)', () => {
    * keep working until it expired. Naming the exception here keeps it visible;
    * a delete appearing anywhere else fails this test.
    */
-  const DELETE_ALLOWED = ['domain/qaLinks.ts']
+  const DELETE_ALLOWED = [
+    // Revoking a QA link deletes the sessions minted from it — that is the
+    // point: a deleted session dies on its next request.
+    'domain/qaLinks.ts',
+    // Unlinking an address deletes its index row so the address can be claimed
+    // again. Tombstoning it instead would make the address permanently
+    // unusable. Neither touches the ledger.
+    'storage/roster.ts',
+  ]
 
-  test('only QA session revocation deletes a row — never the ledger', () => {
+  test('only QA revocation and address unlinking delete a row — never the ledger', () => {
     const offenders: string[] = []
     for (const file of files) {
       const code = stripComments(readFileSync(file, 'utf8'))

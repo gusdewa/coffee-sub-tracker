@@ -7,10 +7,12 @@ import { createTableClient } from './storage/tableClient.js'
 import { TABLES } from './storage/entities.js'
 import {
   RosterCache, listMembers, upsertMember, setMemberStatus,
-  linkMemberEmail, listLinkAudit, isPending,
+  linkMemberEmail, unlinkMemberEmail, listLinkAudit, isPending,
 } from './storage/roster.js'
 import { createTokenVerifier, type TokenVerifier } from './auth/verifyFirebaseToken.js'
-import { authorize, authorizeQaMember, requireAdmin, type AuthContext } from './auth/authorize.js'
+import {
+  authorize, authorizeQaMember, requireAdmin, UnboundAccountError, type AuthContext,
+} from './auth/authorize.js'
 import { consumeOne } from './domain/consume.js'
 import { undoConsume } from './domain/undo.js'
 import { applyCorrection } from './domain/correction.js'
@@ -19,6 +21,7 @@ import {
   createQaLink, redeemQaLink, revokeQaLink, listQaLinks, resolveQaSession,
 } from './domain/qaLinks.js'
 import { getMyCoffee, getHistory, getAllBalances } from './domain/readModels.js'
+import { predictMember } from './domain/predictMember.js'
 import { sendError } from './http/errors.js'
 import { cors } from './http/cors.js'
 import { createLimiters, limit, clientIp } from './http/rateLimit.js'
@@ -47,6 +50,8 @@ declare global {
   namespace Express {
     interface Request {
       ctx?: AuthContext
+      /** Set only on claim routes, for a verified account with no member yet. */
+      unbound?: { email: string; googleDisplayName: string | undefined }
     }
   }
 }
@@ -105,6 +110,32 @@ export function createApp(deps: AppDeps = {}) {
     const token = header.startsWith('Bearer ') ? header.slice(7) : ''
     const verified = await verifier(token)
     req.ctx = await authorize(roster, verified, { allowedEmailDomain: config.allowedEmailDomain })
+  })
+
+  /**
+   * Claim routes accept a verified account that is not yet bound to a member.
+   * The email always comes from the token — never from the request — so a
+   * caller cannot claim on someone else's behalf.
+   */
+  const authenticateAllowUnbound = asyncMiddleware(async (req) => {
+    const header = req.headers.authorization ?? ''
+    if (header.startsWith('QA ')) {
+      // A synthetic QA session is already bound and must never claim an identity.
+      const qaMemberId = await resolveQaSession({ ...roster, qaSessions }, header.slice(3).trim())
+      req.ctx = await authorizeQaMember(roster, qaMemberId)
+      return
+    }
+    const token = header.startsWith('Bearer ') ? header.slice(7) : ''
+    const verified = await verifier(token)
+    try {
+      req.ctx = await authorize(roster, verified, { allowedEmailDomain: config.allowedEmailDomain })
+    } catch (err) {
+      if (err instanceof UnboundAccountError) {
+        req.unbound = { email: err.email, googleDisplayName: err.googleDisplayName }
+        return
+      }
+      throw err
+    }
   })
 
   const withAuth = [
@@ -222,6 +253,68 @@ export function createApp(deps: AppDeps = {}) {
     }),
   )
 
+  /**
+   * Who could this account be? Returns the pending members plus a predicted
+   * best match. The prediction is a convenience only — nothing binds here.
+   */
+  app.get(
+    '/api/claim/options',
+    authenticateAllowUnbound,
+    asyncRoute(async (req, res) => {
+      if (req.ctx) {
+        res.json({ bound: true, member: { memberId: req.ctx.memberId, displayName: req.ctx.displayName } })
+        return
+      }
+      const unbound = req.unbound!
+      const pending = (await listMembers(roster))
+        .filter((m) => !m.isSynthetic && m.status === 'active' && isPending(m))
+        .map((m) => ({ memberId: m.memberId, displayName: m.displayName }))
+
+      const prediction = predictMember(pending, unbound.googleDisplayName, unbound.email)
+      res.json({ bound: false, candidates: pending, prediction })
+    }),
+  )
+
+  /**
+   * Bind the signed-in account to a pending member, immediately.
+   *
+   * The address is taken from the verified token, and uniqueness comes from the
+   * index insert, so two people cannot claim the same identity and one person
+   * cannot claim two. The audit records this as a self-claim, which is what
+   * lets an admin review these separately and override a wrong one.
+   */
+  app.post(
+    '/api/claim',
+    authenticateAllowUnbound,
+    limit(limiters.perMember, (req) => req.unbound?.email ?? req.ctx?.memberId ?? clientIp(req)),
+    asyncRoute(async (req, res) => {
+      if (req.ctx) {
+        res.status(409).json({ error: { code: 'ALREADY_BOUND', message: 'That account is already linked' } })
+        return
+      }
+      const unbound = req.unbound!
+      const memberId = String((req.body as { memberId?: unknown })?.memberId ?? '')
+
+      const target = (await listMembers(roster)).find((m) => m.memberId === memberId)
+      if (!target || target.isSynthetic || target.status !== 'active' || !isPending(target)) {
+        res.status(409).json({
+          error: { code: 'NOT_CLAIMABLE', message: 'That member cannot be claimed' },
+        })
+        return
+      }
+
+      const member = await linkMemberEmail(roster, {
+        actorMemberId: memberId, // the claimant acts as themselves
+        memberId,
+        email: unbound.email,
+        opId: opIdOf(req),
+        allowedDomain: config.allowedEmailDomain,
+        via: 'self',
+      })
+      res.json({ memberId: member.memberId, displayName: member.displayName, bound: true })
+    }),
+  )
+
   // --- admin ----------------------------------------------------------------
 
   const adminOnly = asyncMiddleware(async (req) => {
@@ -290,6 +383,22 @@ export function createApp(deps: AppDeps = {}) {
         allowedDomain: config.allowedEmailDomain,
       })
       res.json({ memberId: member.memberId, displayName: member.displayName, linked: true })
+    }),
+  )
+
+  app.post(
+    '/api/admin/members/:memberId/unlink-email',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      // The correction path for a self-claim that went to the wrong person.
+      // The member keeps its id, so its balance and history survive intact.
+      await unlinkMemberEmail(roster, {
+        actorMemberId: req.ctx!.memberId,
+        memberId: String(req.params.memberId),
+        opId: opIdOf(req),
+      })
+      res.json({ ok: true, unlinked: true })
     }),
   )
 

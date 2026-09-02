@@ -541,3 +541,64 @@
   color: inherit;
   cursor: pointer;
 }
+
+/* --- claim your identity -------------------------------------------------- */
+
+.claim {
+  display: grid;
+  gap: var(--gap-xs);
+  margin: 0 0 var(--gap-m);
+  padding: 0;
+  list-style: none;
+}
+
+.claim__option {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+  min-height: 56px;
+  padding: 0 var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.claim__option--on {
+  border-color: var(--punch);
+  box-shadow: inset 3px 0 0 var(--punch);
+}
+
+.claim__name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.claim__hint {
+  padding: 1px 8px;
+  background: var(--punch-soft);
+  border-radius: var(--radius-pill);
+  color: var(--punch);
+  font-size: var(--step--1);
+}
+
+.person__linked {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+}
+
+.person__unlink {
+  min-height: 36px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.person__unlink:hover:not(:disabled) {
+  border-color: var(--alert);
+  color: var(--alert);
+}

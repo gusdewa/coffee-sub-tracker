@@ -46,11 +46,11 @@ belongs in variables, and it is compiled into a public bundle either way.
 
 | Variable | Value |
 |---|---|
-| `VITE_FIREBASE_PROJECT_ID` | `srx-co-id` |
-| `VITE_FIREBASE_AUTH_DOMAIN` | `srx-co-id.firebaseapp.com` |
-| `VITE_FIREBASE_APP_ID` | `1:137337108224:web:cbcca641c903d85b5d65e5` |
-| `VITE_FIREBASE_API_KEY` | *`firebase apps:sdkconfig WEB <appId> --project srx-co-id`* |
-| `VITE_ALLOWED_EMAIL_DOMAIN` | `srx.co.id` |
+| `VITE_FIREBASE_PROJECT_ID` | `coffee-sub-tracker-f4551d` |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `coffee-sub-tracker-f4551d.firebaseapp.com` |
+| `VITE_FIREBASE_APP_ID` | *`firebase apps:list --project coffee-sub-tracker-f4551d`* |
+| `VITE_FIREBASE_API_KEY` | *`firebase apps:sdkconfig WEB <appId> --project coffee-sub-tracker-f4551d`* |
+| `VITE_ALLOWED_EMAIL_DOMAIN` | `gmail.com` |
 | `VITE_API_BASE_URL` | `https://simo-digitalassets-svc-coffee-sub.azurewebsites.net` |
 
 Also enable Pages: Settings → Pages → Source → **GitHub Actions**.
@@ -79,12 +79,12 @@ dispatch form, so they never enter the repository:
 
 ```json
 [
-  {"email": "…@srx.co.id", "displayName": "Dewa",   "role": "admin"},
-  {"email": "…@srx.co.id", "displayName": "Andri"},
-  {"email": "…@srx.co.id", "displayName": "Roy"},
-  {"email": "…@srx.co.id", "displayName": "Albert"},
-  {"email": "…@srx.co.id", "displayName": "Hadid"},
-  {"email": "…@srx.co.id", "displayName": "Derian"}
+  {"displayName": "Dewa", "email": "gusdewa@gmail.com", "role": "admin"},
+  {"displayName": "Andri"},
+  {"displayName": "Roy"},
+  {"displayName": "Albert"},
+  {"displayName": "Hadid"},
+  {"displayName": "Derian"}
 ]
 ```
 
@@ -95,14 +95,11 @@ logs only the local part of each address.
 Re-running is safe: an address already present keeps its member id, so a
 re-seed never orphans a ledger partition.
 
-## 5. Firebase Console — the one manual boundary
+## 5. Firebase Authentication — done
 
-In project `srx-co-id` (no CLI equivalent exists for either):
-
-1. **Authentication → Sign-in method** → enable **Google**.
-2. **Authentication → Settings → Authorized domains** → add `gusdewa.github.io`.
-
-Sign-in fails until both are done.
+Project `coffee-sub-tracker-f4551d` has the Google provider enabled with an OAuth client, and
+`gusdewa.github.io` in its authorized domains. Verified independently through the
+Identity Toolkit Admin API, and `firebase auth:export` succeeds against it.
 
 ### Optional: QA links
 
@@ -127,7 +124,7 @@ Done by hand because a pipeline cannot create the trust it authenticates with:
 - `Contributor` on `rg-simocommondigitalassets-dev-in`
 - `Role Based Access Control Administrator` on the same group, **conditioned** so
   it may only assign the three role definitions the Bicep declares
-- Firebase web app registration `Coffee Sub Tracker`
+- Firebase web app registration `Coffee Sub Web`
 
 `Contributor` at resource-group scope is broader than ideal — that group also
 holds the thirteen other digital-assets apps, because the Bicep adds tables and

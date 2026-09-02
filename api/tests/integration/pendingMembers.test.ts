@@ -20,13 +20,13 @@ import {
   type RosterDeps,
 } from '../../src/storage/roster.js'
 import { createTokenVerifier } from '../../src/auth/verifyFirebaseToken.js'
-import { authorize, NotAllowlistedError } from '../../src/auth/authorize.js'
+import { authorize, UnboundAccountError } from '../../src/auth/authorize.js'
 import { createBatch } from '../../src/domain/batches.js'
 import { consumeOne } from '../../src/domain/consume.js'
 
 process.env.AZURE_TABLES_CONNECTION_STRING ??= azuriteConnectionString()
 
-const PROJECT_ID = 'srx-co-id'
+const PROJECT_ID = 'coffee-sub-tracker-f4551d'
 const DOMAIN = 'gmail.com'
 const OPTS = { allowedEmailDomain: DOMAIN }
 const ADMIN = 'PENDADMIN0000000000000AAAA'
@@ -88,11 +88,12 @@ describe('a member may exist without an address', () => {
     expect(isPending(m!)).toBe(true)
   })
 
-  test('a pending member cannot sign in — no address is ever inferred', async () => {
+  test('a pending member is never matched by a guessed address', async () => {
     const id = await seedPending('Cannot Sign In')
-    // Someone guessing an address that "looks like" theirs gets nowhere.
+    // A plausible-looking address resolves to nobody. The account is *unbound*
+    // — it may claim an identity deliberately, but nothing is ever inferred.
     const t = await verify(await token('uid-guess', 'plausible.guess@gmail.com'))
-    await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(NotAllowlistedError)
+    await expect(authorize(deps, t, OPTS)).rejects.toBeInstanceOf(UnboundAccountError)
     expect((await findMemberById(deps, id))!.email).toBe('')
   })
 
@@ -177,7 +178,7 @@ describe('linking an exact address (plan: admin-only, unique, audited)', () => {
 
   test('only the permitted domain can be linked', async () => {
     const id = await seedPending('Wrong Domain')
-    for (const bad of ['someone@sinarmas-agri.com', 'someone@srx.co.id', 'someone@srx.id', 'notanemail']) {
+    for (const bad of ['someone@sinarmas-agri.com', 'someone@example.com', 'someone@googlemail.com', 'notanemail']) {
       await expect(
         linkMemberEmail(deps, {
           actorMemberId: ADMIN, memberId: id, email: bad, opId: randomUUID(), allowedDomain: DOMAIN,

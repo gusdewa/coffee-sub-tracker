@@ -18,6 +18,24 @@ export class WrongDomainError extends Error {
   }
 }
 
+/**
+ * A verified Google account that is not yet bound to any member.
+ *
+ * Distinct from NotAllowlistedError because it is *recoverable*: the person may
+ * be one of the pending members and can claim that identity. It carries the
+ * verified email so the claim flow never has to trust a client-supplied one.
+ */
+export class UnboundAccountError extends Error {
+  readonly code = 'ACCOUNT_UNBOUND'
+  constructor(
+    readonly email: string,
+    readonly googleDisplayName: string | undefined,
+  ) {
+    super('That Google account is not linked to anyone yet')
+    this.name = 'UnboundAccountError'
+  }
+}
+
 export class NotAllowlistedError extends Error {
   readonly code = 'NOT_ALLOWLISTED'
   constructor() {
@@ -124,7 +142,8 @@ async function authorizeGoogleUser(
   if (!token.email.toLowerCase().endsWith(suffix)) throw new WrongDomainError()
 
   const member = await findMemberByEmail(deps, token.email)
-  if (!member) throw new NotAllowlistedError()
+  // Not a dead end: this account may belong to a pending member.
+  if (!member) throw new UnboundAccountError(token.email, token.displayName)
   // A synthetic QA member must never be reachable through the Google path.
   if (member.isSynthetic) throw new NotAllowlistedError()
   return member

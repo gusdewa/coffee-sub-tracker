@@ -59,7 +59,7 @@ describe('key legality (plan r1 — the defect that broke revision 1)', () => {
       ['reversalSentinelRowKey', reversalSentinelRowKey(OP)],
       ['idempotencyRowKey', idempotencyRowKey(OP)],
       ['memberRowKey', memberRowKey(ULID_A)],
-      ['emailIndexRowKey', emailIndexRowKey('Dewa@SRX.co.id')],
+      ['emailIndexRowKey', emailIndexRowKey('Dewa@Gmail.com')],
       ['batchRowKey', batchRowKey(d, ULID_B)],
       ['qaSessionRowKey', qaSessionRowKey('some-high-entropy-code')],
       ['ROSTER_PARTITION', ROSTER_PARTITION],
@@ -170,17 +170,17 @@ describe('email index carries no PII and normalizes', () => {
   })
 
   test('case and surrounding whitespace do not change identity', () => {
-    assert.equal(normalizeEmail('  Dewa@SRX.co.id '), 'dewa@srx.co.id')
-    assert.equal(emailHash('  Dewa@SRX.co.id '), emailHash('dewa@srx.co.id'))
-    assert.equal(emailIndexRowKey('  Dewa@SRX.co.id '), emailIndexRowKey('dewa@srx.co.id'))
+    assert.equal(normalizeEmail('  Dewa@Gmail.com '), 'dewa@gmail.com')
+    assert.equal(emailHash('  Dewa@Gmail.com '), emailHash('dewa@gmail.com'))
+    assert.equal(emailIndexRowKey('  Dewa@Gmail.com '), emailIndexRowKey('dewa@gmail.com'))
   })
 
   test('different addresses hash differently', () => {
-    assert.notEqual(emailHash('a@srx.co.id'), emailHash('b@srx.co.id'))
+    assert.notEqual(emailHash('a@gmail.com'), emailHash('b@gmail.com'))
   })
 
   test('the index RowKey never contains the raw address', () => {
-    const key = emailIndexRowKey('dewa@srx.co.id')
+    const key = emailIndexRowKey('dewa@gmail.com')
     assert.ok(!key.includes('dewa'))
     assert.ok(!key.includes('@'))
   })

@@ -85,15 +85,16 @@ can never silently downgrade to key-based auth.
 
 | Setting | Purpose |
 |---|---|
-| `FIREBASE_PROJECT_ID` | token issuer/audience — `srx-co-id` |
-| `ALLOWED_EMAIL_DOMAIN` | workspace domain — `srx.co.id` |
+| `FIREBASE_PROJECT_ID` | token issuer/audience — `coffee-sub-tracker-f4551d` |
+| `ALLOWED_EMAIL_DOMAIN` | identity domain — `gmail.com` (members sign in with a personal Google account) |
 | `STORAGE_ACCOUNT_NAME` | `smartinnovdigitalassets` |
 | `ALLOWED_ORIGIN` | `https://gusdewa.github.io` |
 | `UNDO_WINDOW_SECONDS` | default 90 |
-| `FIREBASE_SA_JSON` | Key Vault reference; **the only secret**, used solely to mint QA custom tokens |
 
 Storage uses `DefaultAzureCredential` (the App Service managed identity), and
-ID-token verification uses Google's public JWKS — so neither needs a secret.
+ID-token verification uses Google's public JWKS. QA sessions are opaque tokens
+issued and revoked by the API itself. **The system therefore holds no secrets
+at all.**
 
 ## Known limits
 
@@ -105,12 +106,15 @@ ID-token verification uses Google's public JWKS — so neither needs a secret.
   `active`. If it fails partway, some members can drink from it and others
   cannot; `POST /api/admin/batches/{id}/reprovision` converges without
   double-granting.
-- **No service worker.** A cached balance is a wrong answer for the one number
-  this app exists to report, so the PWA is manifest-and-icons only.
+- **The service worker never caches the API.** An explicit `NetworkOnly` rule
+  covers the API origin, asserted against the *built* worker rather than the
+  config, because a `urlPattern` closure serialises into the worker as an
+  undefined identifier.
+- **Offline `Drink 1` is disabled on purpose.** Idempotency would stop a
+  duplicate, but not a tap made against a stale balance that lands minutes
+  later. A refusal beats a confidently wrong number.
 
-## Still required before deploying
+## Still outstanding
 
-1. The six members' real `@srx.co.id` addresses, to seed the roster.
-2. Firebase Console, project `srx-co-id`: enable the Google sign-in provider and
-   add `gusdewa.github.io` to Authorized Domains.
-3. A Firebase service-account key for QA custom tokens, stored in Key Vault.
+1. Each member's exact personal Gmail. Only the first admin is known up front;
+   the rest are seeded pending and bind on first sign-in.
