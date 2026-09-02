@@ -27,16 +27,17 @@ API releases and roster writes all pause for approval.
 
 ### Secrets (Settings → Environments → production → Secrets)
 
-| Secret | Value |
+| Secret | Where the value comes from |
 |---|---|
-| `AZURE_CLIENT_ID` | `<set as AZURE_CLIENT_ID>` |
-| `AZURE_TENANT_ID` | `<set as AZURE_TENANT_ID>` |
-| `AZURE_SUBSCRIPTION_ID` | `<set as AZURE_SUBSCRIPTION_ID>` |
-| `AZURE_DEPLOY_PRINCIPAL_ID` | `<set as AZURE_DEPLOY_PRINCIPAL_ID>` |
+| `AZURE_CLIENT_ID` | app registration `gh-coffee-sub-deploy` — `az ad app list --display-name gh-coffee-sub-deploy --query "[0].appId" -o tsv` |
+| `AZURE_TENANT_ID` | `az account show --query tenantId -o tsv` |
+| `AZURE_SUBSCRIPTION_ID` | subscription `sub-gar-nonprod-simocommondigitalassets` — `az account show --query id -o tsv` |
+| `AZURE_DEPLOY_PRINCIPAL_ID` | the service principal object id — `az ad sp list --display-name gh-coffee-sub-deploy --query "[0].id" -o tsv` |
 
 These are identifiers rather than credentials — the trust is the federated
-credential, and there is no client secret to leak — but they are kept as
-environment secrets so the approval gate applies to them.
+credential and there is no client secret — but they are not committed here
+either, because a tenant and subscription id together map a corporate estate.
+They live only as environment secrets. All four are already set.
 
 ### Variables (Settings → Environments → production → Variables)
 
@@ -48,7 +49,7 @@ belongs in variables, and it is compiled into a public bundle either way.
 | `VITE_FIREBASE_PROJECT_ID` | `srx-co-id` |
 | `VITE_FIREBASE_AUTH_DOMAIN` | `srx-co-id.firebaseapp.com` |
 | `VITE_FIREBASE_APP_ID` | `1:137337108224:web:cbcca641c903d85b5d65e5` |
-| `VITE_FIREBASE_API_KEY` | *from `firebase apps:sdkconfig WEB 1:137337108224:web:cbcca641c903d85b5d65e5`* |
+| `VITE_FIREBASE_API_KEY` | *`firebase apps:sdkconfig WEB <appId> --project srx-co-id`* |
 | `VITE_ALLOWED_EMAIL_DOMAIN` | `srx.co.id` |
 | `VITE_API_BASE_URL` | `https://simo-digitalassets-svc-coffee-sub.azurewebsites.net` |
 
