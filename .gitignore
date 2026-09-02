@@ -23,3 +23,6 @@ __azurite__/
 # Local Azurite emulator state
 __azurite__/
 .qa-evidence/
+.e2e/
+web/playwright-report/
+web/test-results/

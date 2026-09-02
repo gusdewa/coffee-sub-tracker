@@ -44,3 +44,20 @@ jobs:
 
       - name: Build web
         run: npm run build -w @coffee-sub/web
+
+      # The update lifecycle is only provable against a real worker in a real
+      # browser: an old tab, a new build, the prompt while signed out, then
+      # activation. Both engines, because iPhone is a first-class target.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Update lifecycle e2e
+        run: npm run test:e2e -w @coffee-sub/web
+
+      - name: Upload e2e report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
