@@ -1,0 +1,104 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths: ['api/**', '.github/workflows/deploy-api.yml', 'package.json', 'package-lock.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write      # OIDC federation — no publish profile, no stored secret
+
+concurrency:
+  group: api-deploy
+  cancel-in-progress: false
+
+env:
+  APP_NAME: simo-digitalassets-svc-coffee-sub
+  RESOURCE_GROUP: rg-simocommondigitalassets-dev-in
+  KEY_VAULT: kv-simo-coffeesub-dev
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Start Azurite (table)
+        run: |
+          npx azurite-table --location /tmp/azurite --silent \
+            --tableHost 127.0.0.1 --tablePort 10002 &
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null "http://127.0.0.1:10002/devstoreaccount1/Tables" && exit 0
+            sleep 1
+          done
+          exit 1
+      - run: npx tsc -p api/tsconfig.json --noEmit
+      - run: npm test -w @coffee-sub/api
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Protected environment: reviewers and secrets are enforced here, not in
+    # the workflow file.
+    environment:
+      name: production
+      url: https://simo-digitalassets-svc-coffee-sub.azurewebsites.net
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+
+      - run: npm ci
+      - run: npm run build -w @coffee-sub/api
+
+      # Ship only what the service runs. This package fully replaces whatever
+      # is on the app, so any earlier partial content is overwritten.
+      - name: Assemble package
+        run: |
+          mkdir -p deploy
+          cp -r api/dist deploy/dist
+          cp api/package.json deploy/package.json
+          cd deploy && npm install --omit=dev --no-audit --no-fund
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The Firebase service-account key travels Key Vault -> app setting
+      # reference. The workflow only asserts the secret exists; its value is
+      # never read into the runner, so it cannot reach a log.
+      - name: Verify Key Vault secret is present
+        run: |
+          if az keyvault secret show --vault-name "$KEY_VAULT" --name firebase-sa-json \
+               --query id -o tsv >/dev/null 2>&1; then
+            echo "firebase-sa-json present — QA sessions enabled"
+          else
+            echo "::warning::firebase-sa-json absent — QA link redemption will be disabled"
+          fi
+
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.APP_NAME }}
+          package: deploy
+
+      - name: Deployment provenance
+        run: |
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          az webapp log deployment show -n "$APP_NAME" -g "$RESOURCE_GROUP" -o json \
+            | jq '{id, status, author, deployer, message, received_time}' || true
+
+      - name: Smoke check
+        run: |
+          for i in $(seq 1 24); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://${APP_NAME}.azurewebsites.net/api/health" || true)
+            [ "$code" = "200" ] && echo "health ok" && exit 0
+            sleep 10
+          done
+          echo "health never returned 200"; exit 1

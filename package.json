@@ -1,0 +1,23 @@
+{
+  "name": "coffee-sub-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Office coffee subscription balance tracker — Firebase Auth identity, Azure Table Storage ledger, GitHub Pages frontend.",
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "azurite": "azurite-table --location ./__azurite__ --silent"
+  },
+  "devDependencies": {
+    "azurite": "^3.33.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

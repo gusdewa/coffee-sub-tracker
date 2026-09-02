@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Concurrency guarantees are asserted against a real Table service.
+      # A mock cannot falsify a claim about simultaneous writes.
+      - name: Start Azurite (table)
+        run: |
+          npx azurite-table --location /tmp/azurite --silent \
+            --tableHost 127.0.0.1 --tablePort 10002 &
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null "http://127.0.0.1:10002/devstoreaccount1/Tables"; then
+              echo "azurite up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "azurite failed to start"; exit 1
+
+      - name: Typecheck
+        run: |
+          npx tsc -p api/tsconfig.json --noEmit
+          npx tsc -b web/tsconfig.json --noEmit
+
+      - name: API tests
+        run: npm test -w @coffee-sub/api
+
+      - name: Web tests
+        run: npm test -w @coffee-sub/web
+
+      - name: Build web
+        run: npm run build -w @coffee-sub/web

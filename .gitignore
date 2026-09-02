@@ -1,0 +1,24 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.vite/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# NEVER commit Google/Firebase service-account credentials (plan §10.3)
+*serviceaccount*.json
+*service-account*.json
+*-firebase-adminsdk-*.json
+firebase-sa*.json
+
+# Azurite local emulator state
+__azurite__/
+*.azurite
+
+# Local Azurite emulator state
+__azurite__/

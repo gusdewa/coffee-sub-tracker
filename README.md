@@ -1,0 +1,116 @@
+# coffee-sub-tracker
+
+Office coffee subscription balances, replacing a WhatsApp thread. Sign in with
+Google, see how many cups you have left, press **Drink 1**.
+
+- **Frontend** — React + TypeScript + Vite on GitHub Pages
+- **Identity** — Firebase Authentication (Google sign-in only); it supplies
+  ID tokens and nothing else
+- **Data** — Azure Table Storage, account `smartinnovdigitalassets`
+- **API** — a trusted Node service on Azure App Service that verifies Firebase
+  tokens and performs every table read and write
+
+No storage key or SAS exists in the browser, in this repository, or in CI.
+
+## How the interesting parts work
+
+**A tap decrements exactly one unit, exactly once.** The oldest allocation with
+units left, the audit row, and the idempotency record all live in the member's
+own Table partition, and Azure entity-group transactions are atomic within a
+partition — so all three commit together or not at all.
+
+Two properties fall out of that structure rather than out of convention:
+
+- **Non-negativity comes from the ETag**, not from the `remaining > 0` check.
+  The check picks a candidate; the precondition refuses to commit if anyone
+  touched that row in between. Two people cannot both spend the last cup.
+- **Idempotency is the insert.** A duplicate `Idempotency-Key` collides on the
+  row key and the whole transaction fails, so a retry cannot produce a second
+  drink. There is no read-then-check race.
+
+A *simultaneous tap* and a *retried tap* are different events: distinct
+operation ids each consume, an identical one consumes once and replays the
+original answer.
+
+**Undo never mutates history.** A reversal inserts a new row plus a sentinel
+`R|<originalOpId>`; the original CONSUME row is untouched. "Already undone?" is
+a point read, and a double undo is refused by the insert conflict itself.
+
+**Append-only is enforced by this application, not by the storage.** Azure
+Tables have no WORM mode, and table RBAC offers only read or read-write-delete —
+there is no append-only role, so the API's identity could technically delete an
+audit row. Two things stand in for that: no code path constructs an update or
+delete against a `T|` row (asserted by test), and Table diagnostic logs go to a
+Log Analytics workspace the API cannot write to, so any out-of-band mutation is
+independently visible.
+
+## Layout
+
+```
+api/   trusted service — token verification, all table access
+web/   the SPA
+```
+
+Key formats live in exactly one file, `api/src/storage/keys.ts`. Azure forbids
+`/ \ # ?` and control characters in keys, so the separator is `|` and prefix
+scans are bounded by its successor `}`. Member ids are opaque ULIDs — no email
+address ever enters a key.
+
+## Running locally
+
+```sh
+npm install
+npx azurite-table --location ./__azurite__ --silent \
+  --tableHost 127.0.0.1 --tablePort 10002 &   # local Table emulator
+npm test                                       # api + web
+npm run dev -w @coffee-sub/web
+```
+
+> **Installing dependencies on the SMART-VIP network.** `registry.npmjs.org` is
+> firewall-blocked, and the corporate Nexus mirror is cache-only and missing
+> several packages (including `@azure/data-tables`). Install through a complete
+> reachable mirror, with an isolated config so Nexus credentials are not sent
+> to it:
+>
+> ```sh
+> printf 'registry=https://registry.yarnpkg.com/\n' > /tmp/npmrc
+> NPM_CONFIG_USERCONFIG=/tmp/npmrc npm install
+> ```
+
+The API needs `AZURE_TABLES_CONNECTION_STRING` only for the emulator. Setting it
+while `NODE_ENV=production` makes the process refuse to start, so a deployment
+can never silently downgrade to key-based auth.
+
+## Configuration
+
+| Setting | Purpose |
+|---|---|
+| `FIREBASE_PROJECT_ID` | token issuer/audience — `srx-co-id` |
+| `ALLOWED_EMAIL_DOMAIN` | workspace domain — `srx.co.id` |
+| `STORAGE_ACCOUNT_NAME` | `smartinnovdigitalassets` |
+| `ALLOWED_ORIGIN` | `https://gusdewa.github.io` |
+| `UNDO_WINDOW_SECONDS` | default 90 |
+| `FIREBASE_SA_JSON` | Key Vault reference; **the only secret**, used solely to mint QA custom tokens |
+
+Storage uses `DefaultAzureCredential` (the App Service managed identity), and
+ID-token verification uses Google's public JWKS — so neither needs a secret.
+
+## Known limits
+
+- **Rate limiting is in-process.** Correct for the single B3 instance this runs
+  on. Scaling out to more than one instance needs a shared store, or the limits
+  become per-instance.
+- **Batch provisioning spans partitions and cannot be atomic.** A batch is
+  written as `provisioning`, then one transaction per member, then flipped to
+  `active`. If it fails partway, some members can drink from it and others
+  cannot; `POST /api/admin/batches/{id}/reprovision` converges without
+  double-granting.
+- **No service worker.** A cached balance is a wrong answer for the one number
+  this app exists to report, so the PWA is manifest-and-icons only.
+
+## Still required before deploying
+
+1. The six members' real `@srx.co.id` addresses, to seed the roster.
+2. Firebase Console, project `srx-co-id`: enable the Google sign-in provider and
+   add `gusdewa.github.io` to Authorized Domains.
+3. A Firebase service-account key for QA custom tokens, stored in Key Vault.

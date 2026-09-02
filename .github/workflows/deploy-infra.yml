@@ -1,0 +1,72 @@
+name: Deploy infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths: ['infra/**', '.github/workflows/deploy-infra.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write      # OIDC federation — no stored Azure credential
+
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: rg-simocommondigitalassets-dev-in
+
+jobs:
+  whatif:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Show the reviewer what would change before anything is applied.
+      - name: What-if
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}"
+
+  apply:
+    needs: whatif
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      apiPrincipalId: ${{ steps.deploy.outputs.apiPrincipalId }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - id: deploy
+        name: Apply
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "coffee-infra-${{ github.run_id }}" \
+            --template-file infra/main.bicep \
+            --parameters deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
+            --query properties.outputs -o json > out.json
+          echo "apiPrincipalId=$(jq -r .apiPrincipalId.value out.json)" >> "$GITHUB_OUTPUT"
+
+      # Provenance: prove the deployment ran as the Actions OIDC principal.
+      - name: Record deployment provenance
+        run: |
+          az deployment group show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "coffee-infra-${{ github.run_id }}" \
+            --query "{name:name,state:properties.provisioningState,timestamp:properties.timestamp}" -o table
+          echo "Deployed by OIDC principal: $(az ad signed-in-user show --query id -o tsv 2>/dev/null || az account show --query user.name -o tsv)"

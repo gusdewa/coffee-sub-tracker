@@ -1,0 +1,372 @@
+import express, { type NextFunction, type Request, type Response } from 'express'
+import { randomUUID } from 'node:crypto'
+import type { TableClient } from '@azure/data-tables'
+
+import { loadConfig, type Config } from './config.js'
+import { createTableClient } from './storage/tableClient.js'
+import { TABLES } from './storage/entities.js'
+import { RosterCache, listMembers, upsertMember, setMemberStatus } from './storage/roster.js'
+import { createTokenVerifier, type TokenVerifier } from './auth/verifyFirebaseToken.js'
+import { authorize, requireAdmin, type AuthContext } from './auth/authorize.js'
+import { loadServiceAccount } from './auth/customToken.js'
+import { consumeOne } from './domain/consume.js'
+import { undoConsume } from './domain/undo.js'
+import { applyCorrection } from './domain/correction.js'
+import { createBatch, reprovisionBatch, listBatches } from './domain/batches.js'
+import { createQaLink, redeemQaLink, revokeQaLink, listQaLinks } from './domain/qaLinks.js'
+import { getMyCoffee, getHistory, getAllBalances } from './domain/readModels.js'
+import { sendError } from './http/errors.js'
+import { cors } from './http/cors.js'
+import { createLimiters, limit, clientIp } from './http/rateLimit.js'
+
+/**
+ * HTTP surface.
+ *
+ * The single most important rule in this file: on every non-admin route the
+ * subject is `ctx.memberId`, derived from the verified token. A `memberId` in
+ * a path or body is never read for those routes, so cross-user consumption is
+ * impossible by construction rather than by a permission check that could be
+ * forgotten on a new endpoint.
+ */
+
+export interface AppDeps {
+  config?: Config
+  ledger?: TableClient
+  members?: TableClient
+  batches?: TableClient
+  qaSessions?: TableClient
+  verifier?: TokenVerifier
+}
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      ctx?: AuthContext
+    }
+  }
+}
+
+export function createApp(deps: AppDeps = {}) {
+  const config = deps.config ?? loadConfig()
+  const ledger = deps.ledger ?? createTableClient(TABLES.ledger)
+  const members = deps.members ?? createTableClient(TABLES.members)
+  const batches = deps.batches ?? createTableClient(TABLES.batches)
+  const qaSessions = deps.qaSessions ?? createTableClient(TABLES.qaSessions)
+
+  const cache = new RosterCache(config.rosterCacheTtlMs)
+  const roster = { members, cache }
+  const serviceAccount = loadServiceAccount(config.firebaseServiceAccountJson)
+  const verifier =
+    deps.verifier ?? createTokenVerifier({ projectId: config.firebaseProjectId })
+  const limiters = createLimiters()
+
+  const app = express()
+  app.set('trust proxy', true)
+  app.disable('x-powered-by')
+  app.use(express.json({ limit: '16kb' }))
+  app.use(cors(config.allowedOrigin))
+
+  const asyncRoute =
+    (fn: (req: Request, res: Response) => Promise<void>) =>
+    (req: Request, res: Response, next: NextFunction) => {
+      fn(req, res).catch(next)
+    }
+
+  /**
+   * Middleware variant. asyncRoute is for terminal handlers that send a
+   * response; middleware must hand control onward, or the request hangs.
+   */
+  const asyncMiddleware =
+    (fn: (req: Request, res: Response) => Promise<void>) =>
+    (req: Request, res: Response, next: NextFunction) => {
+      fn(req, res).then(() => next()).catch(next)
+    }
+
+  /** Verify, authorize, and attach the context. Everything below trusts only this. */
+  const authenticate = asyncMiddleware(async (req) => {
+    const header = req.headers.authorization ?? ''
+    const token = header.startsWith('Bearer ') ? header.slice(7) : ''
+    const verified = await verifier(token)
+    req.ctx = await authorize(roster, verified, { allowedEmailDomain: config.allowedEmailDomain })
+  })
+
+  const withAuth = [
+    authenticate,
+    limit(limiters.perMember, (req) => req.ctx?.memberId ?? clientIp(req)),
+  ]
+
+  /** The client supplies the intent id; we validate its shape, never its origin. */
+  const opIdOf = (req: Request): string => {
+    const header = req.header('Idempotency-Key')
+    return header && header.trim() ? header.trim() : randomUUID()
+  }
+
+  // --- public ---------------------------------------------------------------
+
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true })
+  })
+
+  app.post(
+    '/api/qa/redeem',
+    limit(limiters.qaRedeem, clientIp),
+    asyncRoute(async (req, res) => {
+      const code = String((req.body as { code?: unknown })?.code ?? '')
+      const session = await redeemQaLink(
+        { ...roster, qaSessions, serviceAccount },
+        code,
+      )
+      // The code is never echoed back, and never logged.
+      res.json({
+        customToken: session.customToken,
+        qaMemberId: session.qaMemberId,
+        expiresAt: session.expiresAt.toISOString(),
+      })
+    }),
+  )
+
+  // --- member ---------------------------------------------------------------
+
+  app.get(
+    '/api/me',
+    withAuth,
+    asyncRoute(async (req, res) => {
+      const ctx = req.ctx!
+      const coffee = await getMyCoffee({ ledger }, ctx.memberId)
+      res.json({
+        member: {
+          memberId: ctx.memberId,
+          displayName: ctx.displayName,
+          role: ctx.role,
+          isQa: ctx.isQa,
+        },
+        ...coffee,
+      })
+    }),
+  )
+
+  app.post(
+    '/api/me/drinks',
+    withAuth,
+    limit(limiters.drinks, (req) => req.ctx?.memberId ?? clientIp(req)),
+    asyncRoute(async (req, res) => {
+      const ctx = req.ctx! // subject is the caller, never the body
+      const result = await consumeOne({ ledger }, ctx.memberId, opIdOf(req))
+      if (result.replayed) res.setHeader('Idempotency-Replayed', 'true')
+      res.json(result)
+    }),
+  )
+
+  app.post(
+    '/api/me/drinks/:opId/undo',
+    withAuth,
+    asyncRoute(async (req, res) => {
+      const ctx = req.ctx!
+      const result = await undoConsume(
+        { ledger },
+        ctx.memberId,
+        String(req.params.opId),
+        opIdOf(req),
+      )
+      if (result.replayed) res.setHeader('Idempotency-Replayed', 'true')
+      res.json(result)
+    }),
+  )
+
+  app.get(
+    '/api/me/history',
+    withAuth,
+    asyncRoute(async (req, res) => {
+      const limitParam = Math.min(Number(req.query.limit ?? 50) || 50, 200)
+      res.json({ items: await getHistory({ ledger }, req.ctx!.memberId, limitParam) })
+    }),
+  )
+
+  app.get(
+    '/api/balances',
+    withAuth,
+    asyncRoute(async (_req, res) => {
+      // Display name and remaining total only — no email, no history.
+      res.json({ balances: await getAllBalances({ ledger, ...roster }) })
+    }),
+  )
+
+  app.get(
+    '/api/batches',
+    withAuth,
+    asyncRoute(async (_req, res) => {
+      const all = await listBatches({ ledger, batches })
+      res.json({
+        batches: all.map((b) => ({
+          batchId: b.batchId,
+          label: b.label,
+          effectiveAt: b.effectiveAt.toISOString(),
+          totalUnits: b.totalUnits,
+          status: b.status,
+        })),
+      })
+    }),
+  )
+
+  // --- admin ----------------------------------------------------------------
+
+  const adminOnly = asyncMiddleware(async (req) => {
+    requireAdmin(req.ctx!)
+  })
+
+  app.get(
+    '/api/admin/members',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (_req, res) => {
+      res.json({ members: await listMembers(roster) })
+    }),
+  )
+
+  app.post(
+    '/api/admin/members',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const b = req.body as {
+        memberId?: string
+        email?: string
+        displayName?: string
+        role?: 'member' | 'admin'
+        status?: 'active' | 'disabled'
+      }
+      await upsertMember(roster, {
+        memberId: b.memberId ?? randomUUID().replace(/-/g, '').toUpperCase().slice(0, 26),
+        email: b.email ?? '',
+        displayName: b.displayName ?? '',
+        role: b.role ?? 'member',
+        status: b.status ?? 'active',
+      })
+      res.status(201).json({ ok: true })
+    }),
+  )
+
+  app.post(
+    '/api/admin/members/:memberId/status',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const status = (req.body as { status?: 'active' | 'disabled' }).status ?? 'active'
+      await setMemberStatus(roster, String(req.params.memberId), status)
+      res.json({ ok: true })
+    }),
+  )
+
+  app.post(
+    '/api/admin/members/:memberId/corrections',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const b = req.body as { delta?: number; reason?: string }
+      const result = await applyCorrection(
+        { ledger },
+        req.ctx!.memberId,
+        String(req.params.memberId),
+        Number(b.delta),
+        String(b.reason ?? ''),
+        opIdOf(req),
+      )
+      res.json(result)
+    }),
+  )
+
+  app.get(
+    '/api/admin/members/:memberId/history',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      res.json({ items: await getHistory({ ledger }, String(req.params.memberId)) })
+    }),
+  )
+
+  app.post(
+    '/api/admin/batches',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const b = req.body as {
+        label?: string
+        effectiveAt?: string
+        allocations?: Array<{ memberId: string; units: number }>
+      }
+      const batch = await createBatch({ ledger, batches }, req.ctx!.memberId, {
+        label: String(b.label ?? ''),
+        ...(b.effectiveAt ? { effectiveAt: new Date(b.effectiveAt) } : {}),
+        allocations: b.allocations ?? [],
+      })
+      res.status(201).json(batch)
+    }),
+  )
+
+  app.post(
+    '/api/admin/batches/:batchId/reprovision',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const b = req.body as { allocations?: Array<{ memberId: string; units: number }> }
+      const batch = await reprovisionBatch(
+        { ledger, batches },
+        req.ctx!.memberId,
+        String(req.params.batchId),
+        b.allocations ?? [],
+      )
+      res.json(batch)
+    }),
+  )
+
+  app.post(
+    '/api/admin/qa-links',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const b = req.body as { ttlMinutes?: number; maxUses?: number; label?: string }
+      const link = await createQaLink({ ...roster, qaSessions, serviceAccount }, req.ctx!.memberId, {
+        ...(b.ttlMinutes ? { ttlMinutes: b.ttlMinutes } : {}),
+        ...(b.maxUses ? { maxUses: b.maxUses } : {}),
+        ...(b.label ? { label: b.label } : {}),
+      })
+      // The only time the plaintext code is ever emitted.
+      res.status(201).json({
+        linkId: link.linkId,
+        code: link.code,
+        qaMemberId: link.qaMemberId,
+        expiresAt: link.expiresAt.toISOString(),
+      })
+    }),
+  )
+
+  app.get(
+    '/api/admin/qa-links',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (_req, res) => {
+      res.json({ links: await listQaLinks({ ...roster, qaSessions }) })
+    }),
+  )
+
+  app.delete(
+    '/api/admin/qa-links/:linkId',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      await revokeQaLink({ ...roster, qaSessions }, String(req.params.linkId))
+      res.json({ ok: true })
+    }),
+  )
+
+  app.use((_req, res) => {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No such endpoint' } })
+  })
+
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    sendError(res, err)
+  })
+
+  return app
+}

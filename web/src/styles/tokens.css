@@ -1,0 +1,130 @@
+/*
+ * Coffee subscriptions as punch cards.
+ *
+ * The palette is deliberately cool — ink and a green-grey paper rather than
+ * the warm cream and terracotta that coffee briefs default to. Green is the
+ * "you have this" signal, borrowed from the plantation rather than the cup.
+ * Warmth appears only once, on the action itself.
+ */
+
+:root {
+  --ink: #17202a;
+  --ink-soft: #47525e;
+  --ink-faint: #8994a0;
+
+  --paper: #f2f4f1;
+  --paper-raised: #ffffff;
+  --paper-edge: #dde2dc;
+
+  --punch: #2e7d5b;
+  --punch-soft: #d7e7df;
+  --spent: #bcc4bd;
+
+  --action: #b4531f;
+  --action-press: #90400f;
+  --alert: #a8331f;
+
+  --focus: #1d5fd0;
+
+  --radius-card: 10px;
+  --radius-pill: 999px;
+
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.75rem;
+  --step-hero: clamp(4rem, 26vw, 7rem);
+
+  --gap-xs: 0.375rem;
+  --gap-s: 0.75rem;
+  --gap-m: 1.25rem;
+  --gap-l: 2rem;
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --nav-height: 4rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ink: #e8ece8;
+    --ink-soft: #a9b3ab;
+    --ink-faint: #77827a;
+
+    --paper: #12171a;
+    --paper-raised: #1b2226;
+    --paper-edge: #2b3439;
+
+    --punch: #57b48b;
+    --punch-soft: #1f3a30;
+    --spent: #3c474a;
+
+    --action: #d8703a;
+    --action-press: #b85a28;
+    --alert: #e06a55;
+
+    --focus: #6fa4ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Never let a rubber-band scroll hide the action button on iOS. */
+  overscroll-behavior-y: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Numbers must never jitter as a balance counts down. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
