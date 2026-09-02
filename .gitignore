@@ -22,3 +22,4 @@ __azurite__/
 
 # Local Azurite emulator state
 __azurite__/
+.qa-evidence/

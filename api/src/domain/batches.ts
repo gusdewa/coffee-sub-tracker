@@ -125,6 +125,7 @@ async function provisionMember(
         delta: req.units,
         allocRowKey,
         batchId: batch.batchId,
+        batchLabel: batch.label,
         opId,
         actorMemberId,
         subjectMemberId: req.memberId,

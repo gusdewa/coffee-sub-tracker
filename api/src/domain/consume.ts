@@ -175,6 +175,7 @@ export async function consumeOne(
           delta: -1,
           allocRowKey: target.rowKey,
           batchId: target.batchId,
+          batchLabel: target.batchLabel,
           opId,
           actorMemberId: memberId,
           subjectMemberId: memberId,

@@ -184,6 +184,7 @@ export async function undoConsume(
           delta: 1,
           allocRowKey,
           batchId: String(txn.batchId ?? ''),
+          batchLabel: String(txn.batchLabel ?? ''),
           opId: undoOpId,
           actorMemberId: memberId,
           subjectMemberId: memberId,

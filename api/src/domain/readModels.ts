@@ -98,7 +98,9 @@ export async function getHistory(
       opId: String(r.opId ?? ''),
       type: String(r.type ?? ''),
       delta: Number(r.delta ?? 0),
-      batchLabel: String(r.batchLabel ?? r.batchId ?? ''),
+      // Deliberately not falling back to batchId: a raw ULID on screen is
+      // worse than an empty label.
+      batchLabel: String(r.batchLabel ?? ''),
       createdAt: new Date(String(r.createdAt)).toISOString(),
       reversed: reversedOpIds.has(String(r.opId ?? '')),
     }

@@ -215,6 +215,7 @@ export async function applyCorrection(
           delta,
           allocRowKey: touched[0] ?? '',
           batchId: delta > 0 ? ADJUSTMENT_BATCH_ID : '',
+          batchLabel: delta > 0 ? 'Admin correction' : 'Correction',
           opId,
           actorMemberId,
           subjectMemberId,

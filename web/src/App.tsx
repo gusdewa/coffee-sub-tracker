@@ -12,14 +12,37 @@ import { AdminMembers } from './screens/AdminMembers'
 import { OfflineBanner } from './components/OfflineBanner'
 
 function SignIn() {
+  const [error, setError] = useState<string | null>(null)
+
+  const signIn = async () => {
+    setError(null)
+    try {
+      await signInWithGoogle()
+    } catch (err) {
+      // Google sign-in is unavailable until the Firebase project has its
+      // provider enabled; saying so beats a button that silently does nothing.
+      const code = (err as { code?: string }).code ?? ""
+      setError(
+        code.includes("configuration-not-found") || code.includes("internal-error")
+          ? "Google sign-in is not switched on for this project yet. Ask an admin."
+          : "Could not sign in. Please try again.",
+      )
+    }
+  }
+
   return (
     <div className="screen screen--centred">
       <div className="signin">
         <h1 className="signin__title">Office coffee</h1>
         <p className="signin__sub">Your subscription balance, without the group chat.</p>
-        <button type="button" className="drink" onClick={() => void signInWithGoogle()}>
+        <button type="button" className="drink" onClick={() => void signIn()}>
           Sign in with Google
         </button>
+        {error && (
+          <p className="error error--inline" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   )

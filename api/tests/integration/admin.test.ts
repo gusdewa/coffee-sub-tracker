@@ -68,6 +68,21 @@ describe('batch provisioning across partitions (plan §4.4)', () => {
     expect(await totalRemaining(c)).toBe(1)
   })
 
+  test('history shows the batch name, never a raw id', async () => {
+    const m = newMemberId()
+    await createBatch(deps, ADMIN, { label: 'September beans', allocations: [{ memberId: m, units: 2 }] })
+    await consumeOne({ ledger }, m, randomUUID())
+
+    const { getHistory } = await import('../../src/domain/readModels.js')
+    const items = await getHistory({ ledger }, m)
+    expect(items.length).toBe(2)
+    for (const item of items) {
+      expect(item.batchLabel).toBe('September beans')
+      // A ULID on screen is meaningless to a person reading their history.
+      expect(item.batchLabel).not.toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+    }
+  })
+
   test('records a GRANT transaction per member', async () => {
     const m = newMemberId()
     await createBatch(deps, ADMIN, { label: 'Grant audit', allocations: [{ memberId: m, units: 3 }] })
