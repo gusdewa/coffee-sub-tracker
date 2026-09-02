@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { api } from '../api/client'
-import { signInWithQaToken } from '../auth/firebase'
+import { api, setQaSession } from '../api/client'
 
 /**
  * QA link redemption.
@@ -15,7 +14,7 @@ import { signInWithQaToken } from '../auth/firebase'
  * call, held only in a local variable, and never written to localStorage,
  * sessionStorage, IndexedDB or a cookie.
  */
-export function QaRedeem() {
+export function QaRedeem({ onSession }: { onSession: () => void }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [status, setStatus] = useState<'working' | 'done' | 'failed'>('working')
@@ -37,8 +36,11 @@ export function QaRedeem() {
 
     void (async () => {
       try {
-        const { customToken } = await api.redeemQa(code)
-        await signInWithQaToken(customToken)
+        const { sessionToken } = await api.redeemQa(code)
+        // Held in memory only, and never a Firebase credential — so this works
+        // even before Google sign-in has been configured on the project.
+        setQaSession(sessionToken)
+        onSession()
         setStatus('done')
         navigate('/', { replace: true })
       } catch {

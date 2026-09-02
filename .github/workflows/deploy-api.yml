@@ -70,18 +70,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # The Firebase service-account key travels Key Vault -> app setting
-      # reference. The workflow only asserts the secret exists; its value is
-      # never read into the runner, so it cannot reach a log.
-      - name: Verify Key Vault secret is present
-        run: |
-          if az keyvault secret show --vault-name "$KEY_VAULT" --name firebase-sa-json \
-               --query id -o tsv >/dev/null 2>&1; then
-            echo "firebase-sa-json present — QA sessions enabled"
-          else
-            echo "::warning::firebase-sa-json absent — QA link redemption will be disabled"
-          fi
-
       - uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.APP_NAME }}

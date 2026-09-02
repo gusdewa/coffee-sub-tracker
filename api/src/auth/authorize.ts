@@ -62,6 +62,29 @@ export interface AuthorizeOptions {
   allowedEmailDomain: string
 }
 
+/**
+ * Admit a QA session. It never carries an email and never touches the Google
+ * path; the member it names must be synthetic and non-admin.
+ */
+export async function authorizeQaMember(
+  deps: RosterDeps,
+  qaMemberId: string,
+): Promise<AuthContext> {
+  const member = await findMemberById(deps, qaMemberId)
+  if (!member) throw new NotAllowlistedError()
+  if (!member.isSynthetic) throw new NotAllowlistedError()
+  if (member.role !== 'member') throw new NotAllowlistedError()
+  if (member.status !== 'active') throw new MemberDisabledError()
+
+  return {
+    memberId: member.memberId,
+    email: '',
+    displayName: member.displayName,
+    role: 'member',
+    isQa: true,
+  }
+}
+
 export async function authorize(
   deps: RosterDeps,
   token: VerifiedToken,

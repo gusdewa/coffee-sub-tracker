@@ -121,12 +121,6 @@ resource api 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'ROSTER_CACHE_TTL_MS', value: '60000' }
         { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
-        {
-          // Resolved by the managed identity at start-up. The value never
-          // passes through a workflow log or a local shell.
-          name: 'FIREBASE_SA_JSON'
-          value: '@Microsoft.KeyVault(SecretUri=${vault.properties.vaultUri}secrets/firebase-sa-json/)'
-        }
       ]
     }
   }

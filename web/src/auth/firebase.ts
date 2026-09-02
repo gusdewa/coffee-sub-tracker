@@ -3,7 +3,6 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
-  signInWithCustomToken,
   signOut as fbSignOut,
   onIdTokenChanged,
   type Auth,
@@ -47,10 +46,6 @@ export function signInWithGoogle(): Promise<unknown> {
   const domain = import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN
   if (domain) provider.setCustomParameters({ hd: domain })
   return signInWithPopup(getAuthInstance(), provider)
-}
-
-export function signInWithQaToken(customToken: string): Promise<unknown> {
-  return signInWithCustomToken(getAuthInstance(), customToken)
 }
 
 export const signOut = (): Promise<void> => fbSignOut(getAuthInstance())

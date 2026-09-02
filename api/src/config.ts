@@ -10,8 +10,6 @@ export interface Config {
   storageAccountName: string | undefined
   undoWindowSeconds: number
   rosterCacheTtlMs: number
-  /** Service-account JSON for QA custom tokens; absent disables QA only. */
-  firebaseServiceAccountJson: string | undefined
   isProduction: boolean
 }
 
@@ -25,7 +23,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     storageAccountName: env.STORAGE_ACCOUNT_NAME,
     undoWindowSeconds: Number(env.UNDO_WINDOW_SECONDS ?? 90),
     rosterCacheTtlMs: Number(env.ROSTER_CACHE_TTL_MS ?? 60_000),
-    firebaseServiceAccountJson: env.FIREBASE_SA_JSON,
     isProduction,
   }
 

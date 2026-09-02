@@ -1,7 +1,7 @@
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from './auth/useAuth'
-import { api } from './api/client'
+import { api, hasQaSession } from './api/client'
 import { signInWithGoogle, signOut } from './auth/firebase'
 import { MyCoffee } from './screens/MyCoffee'
 import { AllBalances } from './screens/AllBalances'
@@ -29,19 +29,21 @@ export function App() {
   const { user, loading } = useAuth()
   const location = useLocation()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [qaActive, setQaActive] = useState(hasQaSession())
 
   useEffect(() => {
-    if (!user) return
+    if (!user && !qaActive) return
     api.me()
       .then((me) => setIsAdmin(me.member.role === 'admin'))
       .catch(() => setIsAdmin(false))
-  }, [user])
+  }, [user, qaActive])
   const isQaRoute = location.pathname.startsWith('/qa')
 
   if (loading) return <div className="screen screen--centred" aria-busy="true" />
 
   // The QA route must run even when signed out — redeeming is what signs you in.
-  if (!user && !isQaRoute) return <SignIn />
+  // A redeemed QA session stands in for a signed-in user.
+  if (!user && !qaActive && !isQaRoute) return <SignIn />
 
   return (
     <div className="app">
@@ -52,13 +54,13 @@ export function App() {
           <Route path="/everyone" element={<AllBalances />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/history" element={<History />} />
-          <Route path="/qa" element={<QaRedeem />} />
+          <Route path="/qa" element={<QaRedeem onSession={() => setQaActive(true)} />} />
           <Route path="/manage" element={<AdminMembers />} />
           <Route path="*" element={<MyCoffee />} />
         </Routes>
       </main>
 
-      {user && (
+      {(user || qaActive) && (
         <nav className="nav" aria-label="Sections">
           <NavLink to="/" end className="nav__link">My coffee</NavLink>
           <NavLink to="/everyone" className="nav__link">Everyone</NavLink>

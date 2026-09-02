@@ -1,14 +1,21 @@
 import { describe, test, beforeAll, expect } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { generateKeyPair, decodeJwt, type KeyLike } from 'jose'
 import { odata, type TableClient } from '@azure/data-tables'
 
 import { createTableClient, ensureTablesExist, azuriteConnectionString } from '../../src/storage/tableClient.js'
 import { TABLES } from '../../src/storage/entities.js'
-import { QA_PARTITION, ledgerPartitionKey, ALLOC_RANGE } from '../../src/storage/keys.js'
+import { QA_PARTITION, qaLinkRowKey, ledgerPartitionKey, ALLOC_RANGE } from '../../src/storage/keys.js'
 import { RosterCache, findMemberById } from '../../src/storage/roster.js'
-import { createQaLink, redeemQaLink, revokeQaLink, QaLinkInvalidError, type QaDeps } from '../../src/domain/qaLinks.js'
-import { CUSTOM_TOKEN_AUDIENCE } from '../../src/auth/customToken.js'
+import {
+  createQaLink,
+  redeemQaLink,
+  revokeQaLink,
+  resolveQaSession,
+  QaLinkInvalidError,
+  QaSessionInvalidError,
+  type QaDeps,
+} from '../../src/domain/qaLinks.js'
+import { authorizeQaMember, requireAdmin, QaScopeDeniedError } from '../../src/auth/authorize.js'
 import { createBatch } from '../../src/domain/batches.js'
 import { consumeOne } from '../../src/domain/consume.js'
 
@@ -20,76 +27,75 @@ let deps: QaDeps
 let qaSessions: TableClient
 let ledger: TableClient
 let batches: TableClient
-let signingKey: KeyLike
 
 beforeAll(async () => {
   await ensureTablesExist()
   qaSessions = createTableClient(TABLES.qaSessions)
   ledger = createTableClient(TABLES.ledger)
   batches = createTableClient(TABLES.batches)
-  const pair = await generateKeyPair('RS256', { extractable: true })
-  signingKey = pair.privateKey
   deps = {
     members: createTableClient(TABLES.members),
     qaSessions,
     cache: new RosterCache(0),
-    signingKey,
   }
 })
 
-async function storedRow(code: string) {
+async function allQaRows(): Promise<string> {
+  const rows: string[] = []
   for await (const e of qaSessions.listEntities({
     queryOptions: { filter: odata`PartitionKey eq ${QA_PARTITION}` },
   })) {
-    const row = e as Record<string, unknown>
-    if (String(row.rowKey) === (await import('../../src/storage/keys.js')).qaSessionRowKey(code)) return row
+    rows.push(JSON.stringify(e))
   }
-  return undefined
+  return rows.join('')
 }
 
-describe('QA link creation stores only a hash (plan §7)', () => {
+describe('QA links store only hashes (plan §7)', () => {
   test('the plaintext code never appears in storage', async () => {
     const link = await createQaLink(deps, ADMIN)
-    const row = await storedRow(link.code)
-
-    expect(row).toBeDefined()
-    expect(row!.rowKey).toMatch(/^[0-9a-f]{64}$/)
-    // Not the code, and no property carries it either.
-    expect(JSON.stringify(row)).not.toContain(link.code)
+    const dump = await allQaRows()
+    expect(dump).not.toContain(link.code)
+    // The hash IS the key, so a lookup stays a point read.
+    const row = (await qaSessions.getEntity(QA_PARTITION, qaLinkRowKey(link.code))) as Record<string, unknown>
+    expect(row.linkId).toBe(link.linkId)
   })
 
-  test('the code carries 256 bits of entropy', async () => {
+  test('the code carries 256 bits of entropy and is never reused', async () => {
     const a = await createQaLink(deps, ADMIN)
     const b = await createQaLink(deps, ADMIN)
     expect(Buffer.from(a.code, 'base64url')).toHaveLength(32)
     expect(a.code).not.toBe(b.code)
   })
 
-  test('creates a synthetic, non-admin member with no email address', async () => {
+  test('creates a synthetic, non-admin member with no address', async () => {
     const link = await createQaLink(deps, ADMIN)
     const member = await findMemberById(deps, link.qaMemberId)
-
-    expect(member).toBeDefined()
     expect(member!.isSynthetic).toBe(true)
     expect(member!.role).toBe('member')
     expect(member!.email).toBe('')
-    expect(member!.status).toBe('active')
   })
 })
 
-describe('redemption is single-use and replay-proof', () => {
-  test('a valid code mints a custom token scoped to the synthetic member', async () => {
+describe('redemption needs no Firebase at all', () => {
+  test('a valid code mints an opaque session, not a JWT', async () => {
     const link = await createQaLink(deps, ADMIN)
     const session = await redeemQaLink(deps, link.code)
 
     expect(session.qaMemberId).toBe(link.qaMemberId)
+    // 256 opaque bits. Nothing here depends on Identity Platform being
+    // initialised, and no signing key exists to leak.
+    expect(Buffer.from(session.sessionToken, 'base64url')).toHaveLength(32)
+    expect(session.sessionToken).not.toContain('.')
 
-    const claims = decodeJwt(session.customToken)
-    expect(claims.uid).toBe(link.qaMemberId)
-    expect(claims.aud).toBe(CUSTOM_TOKEN_AUDIENCE)
-    expect(claims.claims).toEqual({ qa: true, role: 'member' })
-    // Firebase refuses custom tokens longer than an hour.
-    expect((claims.exp as number) - (claims.iat as number)).toBeLessThanOrEqual(3600)
+    expect(await resolveQaSession(deps, session.sessionToken)).toBe(link.qaMemberId)
+  })
+
+  test('the session token is stored only as a hash', async () => {
+    const link = await createQaLink(deps, ADMIN)
+    const session = await redeemQaLink(deps, link.code)
+    const dump = await allQaRows()
+    expect(dump).not.toContain(session.sessionToken)
+    expect(dump).not.toContain(link.code)
   })
 
   test('a second redemption of a single-use link is refused', async () => {
@@ -98,7 +104,7 @@ describe('redemption is single-use and replay-proof', () => {
     await expect(redeemQaLink(deps, link.code)).rejects.toBeInstanceOf(QaLinkInvalidError)
   })
 
-  test('concurrent redemption of a single-use link yields exactly one success', async () => {
+  test('concurrent redemption of a single-use link yields exactly one session', async () => {
     const link = await createQaLink(deps, ADMIN)
     const settled = await Promise.allSettled(
       Array.from({ length: 8 }, () => redeemQaLink(deps, link.code)),
@@ -120,26 +126,50 @@ describe('redemption is single-use and replay-proof', () => {
     await expect(redeemQaLink(later, link.code)).rejects.toBeInstanceOf(QaLinkInvalidError)
   })
 
-  test('an unknown or malformed code is refused without disclosing which', async () => {
+  test('an unknown code is refused without disclosing why', async () => {
     await expect(redeemQaLink(deps, 'x')).rejects.toBeInstanceOf(QaLinkInvalidError)
-    await expect(redeemQaLink(deps, randomUUID() + randomUUID())).rejects.toBeInstanceOf(QaLinkInvalidError)
+    await expect(
+      redeemQaLink(deps, randomUUID() + randomUUID()),
+    ).rejects.toBeInstanceOf(QaLinkInvalidError)
+  })
 
+  test('an unknown or expired session token is refused', async () => {
+    await expect(resolveQaSession(deps, 'nonsense-token-value-000')).rejects.toBeInstanceOf(
+      QaSessionInvalidError,
+    )
     const link = await createQaLink(deps, ADMIN)
-    const wrong = await redeemQaLink(deps, link.code).then(() => null).catch((e) => e)
-    expect(wrong).toBeNull() // the real one works
-    // Both failure shapes above produced the same error type and message.
+    const session = await redeemQaLink(deps, link.code)
+    const later = { ...deps, now: () => new Date(Date.now() + 4 * 60 * 60_000) }
+    await expect(resolveQaSession(later, session.sessionToken)).rejects.toBeInstanceOf(
+      QaSessionInvalidError,
+    )
   })
 })
 
-describe('revocation and isolation', () => {
-  test('revoking disables the synthetic member so an issued token dies', async () => {
+describe('scope containment and revocation', () => {
+  test('a QA session can never reach an admin route', async () => {
     const link = await createQaLink(deps, ADMIN)
-    await redeemQaLink(deps, link.code)
+    const session = await redeemQaLink(deps, link.code)
+    const ctx = await authorizeQaMember(deps, await resolveQaSession(deps, session.sessionToken))
+
+    expect(ctx.isQa).toBe(true)
+    expect(ctx.role).toBe('member')
+    expect(() => requireAdmin(ctx)).toThrow(QaScopeDeniedError)
+    // Even if the row were tampered to admin, the QA flag is checked first.
+    expect(() => requireAdmin({ ...ctx, role: 'admin' })).toThrow(QaScopeDeniedError)
+  })
+
+  test('revoking kills an issued session immediately, not at expiry', async () => {
+    const link = await createQaLink(deps, ADMIN)
+    const session = await redeemQaLink(deps, link.code)
+    expect(await resolveQaSession(deps, session.sessionToken)).toBe(link.qaMemberId)
 
     await revokeQaLink(deps, link.linkId)
 
-    const member = await findMemberById(deps, link.qaMemberId)
-    expect(member!.status).toBe('disabled')
+    await expect(resolveQaSession(deps, session.sessionToken)).rejects.toBeInstanceOf(
+      QaSessionInvalidError,
+    )
+    expect((await findMemberById(deps, link.qaMemberId))!.status).toBe('disabled')
     await expect(redeemQaLink(deps, link.code)).rejects.toBeInstanceOf(QaLinkInvalidError)
   })
 
@@ -154,19 +184,17 @@ describe('revocation and isolation', () => {
     await createBatch({ ledger, batches }, ADMIN, {
       label: 'QA beans', allocations: [{ memberId: link.qaMemberId, units: 2 }],
     })
-
     await consumeOne({ ledger }, link.qaMemberId, randomUUID())
 
-    const realRows: Record<string, unknown>[] = []
     const pk = ledgerPartitionKey(real)
+    const rows: Record<string, unknown>[] = []
     for await (const e of ledger.listEntities({
       queryOptions: { filter: odata`PartitionKey eq ${pk} and RowKey ge ${ALLOC_RANGE.from} and RowKey lt ${ALLOC_RANGE.to}` },
     })) {
-      realRows.push(e as Record<string, unknown>)
+      rows.push(e as Record<string, unknown>)
     }
-
-    expect(realRows).toHaveLength(1)
-    expect(realRows[0]!.remaining).toBe(4) // untouched by QA activity
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.remaining).toBe(4)
     expect(ledgerPartitionKey(link.qaMemberId)).not.toBe(pk)
   })
 })

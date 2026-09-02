@@ -10,13 +10,14 @@ import {
   linkMemberEmail, listLinkAudit, isPending,
 } from './storage/roster.js'
 import { createTokenVerifier, type TokenVerifier } from './auth/verifyFirebaseToken.js'
-import { authorize, requireAdmin, type AuthContext } from './auth/authorize.js'
-import { loadServiceAccount } from './auth/customToken.js'
+import { authorize, authorizeQaMember, requireAdmin, type AuthContext } from './auth/authorize.js'
 import { consumeOne } from './domain/consume.js'
 import { undoConsume } from './domain/undo.js'
 import { applyCorrection } from './domain/correction.js'
 import { createBatch, reprovisionBatch, listBatches } from './domain/batches.js'
-import { createQaLink, redeemQaLink, revokeQaLink, listQaLinks } from './domain/qaLinks.js'
+import {
+  createQaLink, redeemQaLink, revokeQaLink, listQaLinks, resolveQaSession,
+} from './domain/qaLinks.js'
 import { getMyCoffee, getHistory, getAllBalances } from './domain/readModels.js'
 import { sendError } from './http/errors.js'
 import { cors } from './http/cors.js'
@@ -59,7 +60,6 @@ export function createApp(deps: AppDeps = {}) {
 
   const cache = new RosterCache(config.rosterCacheTtlMs)
   const roster = { members, cache }
-  const serviceAccount = loadServiceAccount(config.firebaseServiceAccountJson)
   const verifier =
     deps.verifier ?? createTokenVerifier({ projectId: config.firebaseProjectId })
   const limiters = createLimiters()
@@ -89,6 +89,19 @@ export function createApp(deps: AppDeps = {}) {
   /** Verify, authorize, and attach the context. Everything below trusts only this. */
   const authenticate = asyncMiddleware(async (req) => {
     const header = req.headers.authorization ?? ''
+
+    // A QA session is an opaque server-issued token, resolved against storage
+    // on every request — so revoking it takes effect immediately, and the path
+    // works even before Firebase Identity Platform is initialised.
+    if (header.startsWith('QA ')) {
+      const qaMemberId = await resolveQaSession(
+        { ...roster, qaSessions },
+        header.slice(3).trim(),
+      )
+      req.ctx = await authorizeQaMember(roster, qaMemberId)
+      return
+    }
+
     const token = header.startsWith('Bearer ') ? header.slice(7) : ''
     const verified = await verifier(token)
     req.ctx = await authorize(roster, verified, { allowedEmailDomain: config.allowedEmailDomain })
@@ -116,13 +129,10 @@ export function createApp(deps: AppDeps = {}) {
     limit(limiters.qaRedeem, clientIp),
     asyncRoute(async (req, res) => {
       const code = String((req.body as { code?: unknown })?.code ?? '')
-      const session = await redeemQaLink(
-        { ...roster, qaSessions, serviceAccount },
-        code,
-      )
+      const session = await redeemQaLink({ ...roster, qaSessions }, code)
       // The code is never echoed back, and never logged.
       res.json({
-        customToken: session.customToken,
+        sessionToken: session.sessionToken,
         qaMemberId: session.qaMemberId,
         expiresAt: session.expiresAt.toISOString(),
       })
@@ -360,7 +370,7 @@ export function createApp(deps: AppDeps = {}) {
     adminOnly,
     asyncRoute(async (req, res) => {
       const b = req.body as { ttlMinutes?: number; maxUses?: number; label?: string }
-      const link = await createQaLink({ ...roster, qaSessions, serviceAccount }, req.ctx!.memberId, {
+      const link = await createQaLink({ ...roster, qaSessions }, req.ctx!.memberId, {
         ...(b.ttlMinutes ? { ttlMinutes: b.ttlMinutes } : {}),
         ...(b.maxUses ? { maxUses: b.maxUses } : {}),
         ...(b.label ? { label: b.label } : {}),

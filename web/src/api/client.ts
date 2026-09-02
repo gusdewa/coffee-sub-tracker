@@ -11,6 +11,24 @@ import { currentIdToken } from '../auth/firebase'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
+/**
+ * A redeemed QA session, held in memory only.
+ *
+ * Never written to localStorage, sessionStorage, IndexedDB or a cookie: a
+ * reload should end the QA session rather than leave a bearer token lying
+ * around in a browser profile. It is an opaque server-issued token, so it
+ * works whether or not Firebase sign-in is configured.
+ */
+let qaSessionToken: string | null = null
+
+export function setQaSession(token: string | null): void {
+  qaSessionToken = token
+}
+
+export function hasQaSession(): boolean {
+  return qaSessionToken !== null
+}
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -35,11 +53,15 @@ async function request<T>(
   init: RequestInit = {},
   idempotencyKey?: string,
 ): Promise<T> {
-  const token = await currentIdToken()
+  // A QA session takes precedence: it is the only credential that exists when
+  // the tester has not signed in with Google at all.
+  const authorization = qaSessionToken
+    ? `QA ${qaSessionToken}`
+    : await currentIdToken().then((t) => (t ? `Bearer ${t}` : ''))
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(authorization ? { Authorization: authorization } : {}),
     ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
   }
 
@@ -145,7 +167,7 @@ export const api = {
     ),
   adminLinkAudit: () => request<{ entries: LinkAuditEntry[] }>("/api/admin/link-audit"),
   redeemQa: (code: string) =>
-    request<{ customToken: string }>('/api/qa/redeem', {
+    request<{ sessionToken: string; qaMemberId: string; expiresAt: string }>('/api/qa/redeem', {
       method: 'POST',
       body: JSON.stringify({ code }),
     }),

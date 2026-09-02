@@ -222,7 +222,29 @@ export function batchRowKey(effectiveAt: Date, batchId: string): string {
 
 export const QA_PARTITION = 'QA' as const
 
-/** The QA link's plaintext code is never stored — only this hash is. */
-export function qaSessionRowKey(code: string): string {
-  return createHash('sha256').update(code, 'utf8').digest('hex')
+const sha256Hex = (value: string): string =>
+  createHash('sha256').update(value, 'utf8').digest('hex')
+
+/**
+ * `L|<sha256(code)>` — a QA link. The plaintext code is never stored; the hash
+ * IS the key, so a lookup is a point read and a stolen table dump yields
+ * nothing usable.
+ */
+export function qaLinkRowKey(code: string): string {
+  return `L${SEP}${sha256Hex(code)}`
 }
+
+/**
+ * `S|<sha256(token)>` — a redeemed QA session.
+ *
+ * Sessions are opaque server-issued tokens rather than Firebase custom tokens,
+ * so the QA path has no dependency on Identity Platform being initialised, and
+ * the system needs no signing key at all. Revocation is immediate because every
+ * request resolves the session against storage rather than trusting a signature.
+ */
+export function qaSessionRowKey(token: string): string {
+  return `S${SEP}${sha256Hex(token)}`
+}
+
+export const QA_LINK_RANGE: KeyRange = prefixRange('L')
+export const QA_SESSION_RANGE: KeyRange = prefixRange('S')

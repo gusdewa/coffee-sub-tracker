@@ -39,15 +39,39 @@ describe('append-only ledger (plan §10.5, acceptance 11)', () => {
     expect(files.length).toBeGreaterThan(8)
   })
 
-  test('no code path deletes any ledger entity', () => {
+  /**
+   * Exactly one file may delete a row, and it is not a ledger file.
+   *
+   * Revoking a QA link deletes the sessions minted from it — that is the point:
+   * a deleted session dies on its next request, whereas a signed token would
+   * keep working until it expired. Naming the exception here keeps it visible;
+   * a delete appearing anywhere else fails this test.
+   */
+  const DELETE_ALLOWED = ['domain/qaLinks.ts']
+
+  test('only QA session revocation deletes a row — never the ledger', () => {
     const offenders: string[] = []
     for (const file of files) {
       const code = stripComments(readFileSync(file, 'utf8'))
-      // Table deletes at all: the ledger has no legitimate delete anywhere.
-      if (/\bdeleteEntity\s*\(/.test(code)) offenders.push(file)
-      if (/\[\s*['"]delete['"]\s*,/.test(code)) offenders.push(file)
+      const deletes =
+        /\bdeleteEntity\s*\(/.test(code) || /\[\s*['"]delete['"]\s*,/.test(code)
+      if (!deletes) continue
+      if (DELETE_ALLOWED.some((allowed) => file.endsWith(allowed))) continue
+      offenders.push(file)
     }
     expect(offenders).toEqual([])
+  })
+
+  test('no ledger domain file deletes or rewrites anything', () => {
+    const ledgerFiles = files.filter((f) =>
+      /domain\/(consume|undo|correction|batches|readModels)\.ts$/.test(f),
+    )
+    expect(ledgerFiles.length).toBeGreaterThan(3)
+    for (const file of ledgerFiles) {
+      const code = stripComments(readFileSync(file, 'utf8'))
+      expect(/\bdeleteEntity\s*\(/.test(code), `${file} must not delete`).toBe(false)
+      expect(/\[\s*['"]delete['"]\s*,/.test(code), `${file} must not delete`).toBe(false)
+    }
   })
 
   test('every ledger transaction action targets an allocation, never a T| row', () => {
