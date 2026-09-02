@@ -10,6 +10,8 @@ import { History } from './screens/History'
 import { QaRedeem } from './screens/QaRedeem'
 import { AdminMembers } from './screens/AdminMembers'
 import { OfflineBanner } from './components/OfflineBanner'
+import { UpdateBanner } from './components/UpdateBanner'
+import { useServiceWorker } from './pwa/useServiceWorker'
 
 function SignIn() {
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +55,7 @@ export function App() {
   const location = useLocation()
   const [isAdmin, setIsAdmin] = useState(false)
   const [qaActive, setQaActive] = useState(hasQaSession())
+  const sw = useServiceWorker()
 
   useEffect(() => {
     if (!user && !qaActive) return
@@ -70,6 +73,7 @@ export function App() {
 
   return (
     <div className="app">
+      <UpdateBanner show={sw.needsRefresh} onUpdate={sw.update} />
       <OfflineBanner />
       <main className="app__main">
         <Routes>

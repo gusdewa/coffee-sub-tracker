@@ -29,11 +29,17 @@
   --radius-card: 10px;
   --radius-pill: 999px;
 
-  --step--1: 0.8125rem;
-  --step-0: 1rem;
-  --step-1: 1.25rem;
-  --step-2: 1.75rem;
-  --step-hero: clamp(4rem, 26vw, 7rem);
+  /*
+   * Fluid steps. The viewport range that matters is 320-430px: a fixed scale
+   * reads cramped on an SE and undersized on a Pro Max. Each step interpolates
+   * between those, then settles so desktop never inflates.
+   */
+  --step--1: clamp(0.78rem, 0.74rem + 0.2vw, 0.85rem);
+  --step-0: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
+  --step-1: clamp(1.15rem, 1.05rem + 0.5vw, 1.35rem);
+  --step-2: clamp(1.6rem, 1.35rem + 1.2vw, 2rem);
+  /* The balance is the whole point of the screen; let it dominate. */
+  --step-hero: clamp(4.5rem, 24vw, 7.5rem);
 
   --gap-xs: 0.375rem;
   --gap-s: 0.75rem;
