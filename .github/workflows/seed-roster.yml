@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       roster:
-        description: 'JSON array: [{"email","displayName","role":"member|admin","status":"active|disabled"}]'
+        description: 'JSON array: [{"displayName","email"?,"role":"member|admin"}] - omit email to create a pending member'
         required: true
         type: string
       dry_run:
@@ -48,7 +48,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           STORAGE_ACCOUNT_NAME: smartinnovdigitalassets
-          ALLOWED_EMAIL_DOMAIN: srx.co.id
+          ALLOWED_EMAIL_DOMAIN: gmail.com
           ROSTER_JSON: ${{ inputs.roster }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: node api/dist/scripts/seedRoster.js

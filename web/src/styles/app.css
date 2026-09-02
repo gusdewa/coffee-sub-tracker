@@ -394,3 +394,101 @@
   color: var(--ink-soft);
   max-width: 24rem;
 }
+
+/* --- admin roster -------------------------------------------------------- */
+
+.roster {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-s);
+  padding: var(--gap-s) 0;
+  border-bottom: 1px solid var(--paper-edge);
+}
+
+/* Someone known by name but unable to sign in yet. */
+.person--pending {
+  box-shadow: inset 3px 0 0 var(--action);
+  padding-left: var(--gap-s);
+}
+
+.person__name {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  font-weight: 600;
+}
+
+.person__role {
+  padding: 1px 8px;
+  background: var(--punch-soft);
+  border-radius: var(--radius-pill);
+  color: var(--punch);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+.person__email {
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+
+.person__action {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--action);
+  border-radius: var(--radius-pill);
+  color: var(--action);
+  cursor: pointer;
+}
+
+.person__link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-xs);
+  width: 100%;
+}
+
+.person__link input {
+  flex: 1 1 12rem;
+  min-height: 2.75rem;
+  padding: 0 var(--gap-s);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  font: inherit;
+}
+
+.person__save,
+.person__cancel {
+  min-height: 2.75rem;
+  padding: 0 var(--gap-m);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.person__save {
+  background: var(--action);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.person__save:disabled {
+  background: var(--spent);
+  cursor: not-allowed;
+}
+
+.person__cancel {
+  background: transparent;
+  border: 1px solid var(--paper-edge);
+}

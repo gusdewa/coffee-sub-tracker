@@ -104,6 +104,22 @@ export interface BalanceRow {
   remaining: number
 }
 
+export interface MemberRow {
+  memberId: string
+  displayName: string
+  email: string
+  role: "member" | "admin"
+  status: "active" | "disabled"
+  pending: boolean
+}
+
+export interface LinkAuditEntry {
+  actorMemberId: string
+  memberId: string
+  email: string
+  createdAt: string
+}
+
 export interface BatchRow {
   batchId: string
   label: string
@@ -120,6 +136,14 @@ export const api = {
   history: () => request<{ items: HistoryItem[] }>('/api/me/history'),
   balances: () => request<{ balances: BalanceRow[] }>('/api/balances'),
   batches: () => request<{ batches: BatchRow[] }>('/api/batches'),
+  adminMembers: () => request<{ members: MemberRow[] }>("/api/admin/members"),
+  adminLinkEmail: (memberId: string, email: string, key: string) =>
+    request<{ linked: boolean }>(
+      `/api/admin/members/${memberId}/link-email`,
+      { method: "POST", body: JSON.stringify({ email }) },
+      key,
+    ),
+  adminLinkAudit: () => request<{ entries: LinkAuditEntry[] }>("/api/admin/link-audit"),
   redeemQa: (code: string) =>
     request<{ customToken: string }>('/api/qa/redeem', {
       method: 'POST',

@@ -6,6 +6,8 @@ import {
   emailIndexRowKey,
   normalizeEmail,
   MEMBER_RANGE,
+  LINK_AUDIT_RANGE,
+  linkAuditRowKey,
 } from './keys.js'
 import { isNotFound } from './tableClient.js'
 import type { MemberEntity, MemberRole, MemberStatus } from './entities.js'
@@ -199,4 +201,156 @@ export async function setMemberStatus(
     'Merge',
   )
   deps.cache?.clear()
+}
+
+// --- pending members and address linking -----------------------------------
+
+/**
+ * A member may exist with **no address**. That is the normal state for someone
+ * whose personal Google account has not been confirmed: we know who they are,
+ * an admin can already allocate cups to them, but nobody can sign in as them.
+ *
+ * Guessing an address from a corporate alias would silently hand one person's
+ * balance to whoever happens to own that Gmail, so an unlinked member stays
+ * unlinked until an admin supplies the exact address.
+ */
+export class MemberNotFoundError extends Error {
+  readonly code = 'MEMBER_NOT_FOUND'
+  constructor() {
+    super('No such member')
+    this.name = 'MemberNotFoundError'
+  }
+}
+
+export class EmailAlreadyLinkedError extends Error {
+  readonly code = 'EMAIL_ALREADY_LINKED'
+  constructor() {
+    super('That address is already linked to a member')
+    this.name = 'EmailAlreadyLinkedError'
+  }
+}
+
+export class MemberAlreadyLinkedError extends Error {
+  readonly code = 'MEMBER_ALREADY_LINKED'
+  constructor() {
+    super('That member already has an address. Unlink it first.')
+    this.name = 'MemberAlreadyLinkedError'
+  }
+}
+
+export class LinkDomainError extends Error {
+  readonly code = 'VALIDATION_FAILED'
+  constructor(domain: string) {
+    super(`Only @${domain} addresses can be linked`)
+    this.name = 'LinkDomainError'
+  }
+}
+
+export const isPending = (m: Member): boolean => m.email === ''
+
+export interface LinkEmailInput {
+  actorMemberId: string
+  memberId: string
+  email: string
+  opId: string
+  allowedDomain: string
+}
+
+/**
+ * Link an exact address to a pending member.
+ *
+ * Uniqueness is the insert of `E|<hash>`, not a prior lookup: two admins racing
+ * to attach the same address cannot both succeed, because the second insert
+ * collides. The member update and the audit row ride in the same transaction,
+ * so a link can never exist without its audit entry.
+ */
+export async function linkMemberEmail(deps: RosterDeps, input: LinkEmailInput): Promise<Member> {
+  const email = normalizeEmail(input.email)
+  const domain = input.allowedDomain.toLowerCase()
+  if (!email.includes('@') || !email.endsWith(`@${domain}`)) throw new LinkDomainError(domain)
+
+  let row: Record<string, unknown>
+  try {
+    row = (await deps.members.getEntity(
+      ROSTER_PARTITION,
+      memberRowKey(input.memberId),
+    )) as Record<string, unknown>
+  } catch (err) {
+    if (isNotFound(err)) throw new MemberNotFoundError()
+    throw err
+  }
+
+  const current = toMember(row)
+  if (current.email) throw new MemberAlreadyLinkedError()
+
+  const at = new Date()
+  const actions: TransactionAction[] = [
+    // The uniqueness claim. A duplicate address fails the whole transaction.
+    [
+      'create',
+      {
+        partitionKey: ROSTER_PARTITION,
+        rowKey: emailIndexRowKey(email),
+        kind: 'email-index',
+        memberId: input.memberId,
+      },
+    ],
+    [
+      'update',
+      { partitionKey: ROSTER_PARTITION, rowKey: memberRowKey(input.memberId), email },
+      'Merge',
+      { etag: String(row.etag) },
+    ],
+    [
+      'create',
+      {
+        partitionKey: ROSTER_PARTITION,
+        rowKey: linkAuditRowKey(at, input.opId),
+        kind: 'link-audit',
+        actorMemberId: input.actorMemberId,
+        memberId: input.memberId,
+        email,
+        createdAt: at,
+      },
+    ],
+  ]
+
+  try {
+    await deps.members.submitTransaction(actions)
+  } catch (err) {
+    const status = (err as { statusCode?: number }).statusCode
+    if (status === 409) throw new EmailAlreadyLinkedError()
+    if (status === 412) throw new MemberAlreadyLinkedError() // changed under us
+    throw err
+  }
+
+  deps.cache?.clear()
+  return { ...current, email }
+}
+
+export interface LinkAuditEntry {
+  actorMemberId: string
+  memberId: string
+  email: string
+  createdAt: string
+}
+
+/** Append-only history of who linked which address to whom. */
+export async function listLinkAudit(deps: RosterDeps): Promise<LinkAuditEntry[]> {
+  const out: LinkAuditEntry[] = []
+  const iter = deps.members.listEntities({
+    queryOptions: {
+      filter: odata`PartitionKey eq ${ROSTER_PARTITION} and RowKey ge ${LINK_AUDIT_RANGE.from} and RowKey lt ${LINK_AUDIT_RANGE.to}`,
+    },
+  })
+  for await (const e of iter) {
+    const r = e as Record<string, unknown>
+    out.push({
+      actorMemberId: String(r.actorMemberId ?? ''),
+      memberId: String(r.memberId ?? ''),
+      email: String(r.email ?? ''),
+      createdAt: new Date(String(r.createdAt)).toISOString(),
+    })
+  }
+  return out
 }

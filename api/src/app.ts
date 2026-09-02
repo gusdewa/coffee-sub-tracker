@@ -5,7 +5,10 @@ import type { TableClient } from '@azure/data-tables'
 import { loadConfig, type Config } from './config.js'
 import { createTableClient } from './storage/tableClient.js'
 import { TABLES } from './storage/entities.js'
-import { RosterCache, listMembers, upsertMember, setMemberStatus } from './storage/roster.js'
+import {
+  RosterCache, listMembers, upsertMember, setMemberStatus,
+  linkMemberEmail, listLinkAudit, isPending,
+} from './storage/roster.js'
 import { createTokenVerifier, type TokenVerifier } from './auth/verifyFirebaseToken.js'
 import { authorize, requireAdmin, type AuthContext } from './auth/authorize.js'
 import { loadServiceAccount } from './auth/customToken.js'
@@ -220,7 +223,10 @@ export function createApp(deps: AppDeps = {}) {
     withAuth,
     adminOnly,
     asyncRoute(async (_req, res) => {
-      res.json({ members: await listMembers(roster) })
+      const members = await listMembers(roster)
+      res.json({
+        members: members.map((m) => ({ ...m, pending: isPending(m) })),
+      })
     }),
   )
 
@@ -238,6 +244,8 @@ export function createApp(deps: AppDeps = {}) {
       }
       await upsertMember(roster, {
         memberId: b.memberId ?? randomUUID().replace(/-/g, '').toUpperCase().slice(0, 26),
+        // Omitted address => a pending member: known by name, unable to sign
+        // in, and still eligible for allocations until someone links them.
         email: b.email ?? '',
         displayName: b.displayName ?? '',
         role: b.role ?? 'member',
@@ -255,6 +263,32 @@ export function createApp(deps: AppDeps = {}) {
       const status = (req.body as { status?: 'active' | 'disabled' }).status ?? 'active'
       await setMemberStatus(roster, String(req.params.memberId), status)
       res.json({ ok: true })
+    }),
+  )
+
+  app.post(
+    '/api/admin/members/:memberId/link-email',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (req, res) => {
+      const email = String((req.body as { email?: unknown })?.email ?? '')
+      const member = await linkMemberEmail(roster, {
+        actorMemberId: req.ctx!.memberId,
+        memberId: String(req.params.memberId),
+        email,
+        opId: opIdOf(req),
+        allowedDomain: config.allowedEmailDomain,
+      })
+      res.json({ memberId: member.memberId, displayName: member.displayName, linked: true })
+    }),
+  )
+
+  app.get(
+    '/api/admin/link-audit',
+    withAuth,
+    adminOnly,
+    asyncRoute(async (_req, res) => {
+      res.json({ entries: await listLinkAudit(roster) })
     }),
   )
 

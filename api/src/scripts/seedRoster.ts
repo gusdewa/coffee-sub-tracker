@@ -18,6 +18,7 @@ import { normalizeEmail } from '../storage/keys.js'
 import { ulid } from 'ulid'
 
 interface RosterEntry {
+  /** Omitted for a pending member whose exact Gmail is not yet known. */
   email: string
   displayName: string
   role?: 'member' | 'admin'
@@ -31,7 +32,9 @@ function parseRoster(raw: string | undefined): RosterEntry[] {
 
   return parsed.map((item, i) => {
     const e = item as Partial<RosterEntry>
-    if (!e.email || typeof e.email !== 'string') throw new Error(`entry ${i}: email is required`)
+    if (e.email !== undefined && typeof e.email !== 'string') {
+      throw new Error(`entry ${i}: email must be a string when present`)
+    }
     if (!e.displayName || typeof e.displayName !== 'string') {
       throw new Error(`entry ${i}: displayName is required`)
     }
@@ -39,7 +42,7 @@ function parseRoster(raw: string | undefined): RosterEntry[] {
       throw new Error(`entry ${i}: role must be "member" or "admin"`)
     }
     return {
-      email: normalizeEmail(e.email),
+      email: e.email ? normalizeEmail(e.email) : '',
       displayName: e.displayName.trim(),
       role: e.role ?? 'member',
       status: e.status ?? 'active',
@@ -48,22 +51,34 @@ function parseRoster(raw: string | undefined): RosterEntry[] {
 }
 
 async function main(): Promise<void> {
-  const domain = (process.env.ALLOWED_EMAIL_DOMAIN ?? 'srx.co.id').toLowerCase()
+  const domain = (process.env.ALLOWED_EMAIL_DOMAIN ?? 'gmail.com').toLowerCase()
   const dryRun = process.env.DRY_RUN === 'true'
   const roster = parseRoster(process.env.ROSTER_JSON)
 
+  // A member with no address is deliberate: we know who they are, but their
+  // exact personal Google account has not been confirmed. Guessing one from a
+  // corporate alias would hand their balance to whoever owns that Gmail, so
+  // they are seeded pending and linked later by an admin.
+  const pending = roster.filter((r) => !r.email)
+
   // Refuse the whole batch rather than seed a partial roster: an address on
   // the wrong domain could never sign in anyway, and a typo should be loud.
-  const wrongDomain = roster.filter((r) => !r.email.endsWith(`@${domain}`))
+  const wrongDomain = roster.filter((r) => r.email && !r.email.endsWith(`@${domain}`))
   if (wrongDomain.length > 0) {
     throw new Error(
       `${wrongDomain.length} address(es) are not @${domain}. Nothing was written.`,
     )
   }
   const seen = new Set<string>()
-  for (const r of roster) {
+  for (const r of roster.filter((x) => x.email)) {
     if (seen.has(r.email)) throw new Error(`duplicate address in input: ${r.email}`)
     seen.add(r.email)
+  }
+  const seenNames = new Set<string>()
+  for (const r of roster) {
+    const key = r.displayName.toLowerCase()
+    if (seenNames.has(key)) throw new Error(`duplicate display name in input: ${r.displayName}`)
+    seenNames.add(key)
   }
   if (!roster.some((r) => r.role === 'admin')) {
     throw new Error('At least one member must be an admin, or nobody can manage subscriptions.')
@@ -72,15 +87,23 @@ async function main(): Promise<void> {
   const members = createTableClient(TABLES.members)
   const deps = { members, cache: new RosterCache(0) }
 
-  console.log(`Seeding ${roster.length} member(s) against @${domain}${dryRun ? ' (dry run)' : ''}`)
+  console.log(
+    `Seeding ${roster.length} member(s) against @${domain}` +
+      ` — ${roster.length - pending.length} linked, ${pending.length} pending` +
+      `${dryRun ? ' (dry run)' : ''}`,
+  )
 
   for (const entry of roster) {
-    const existing = await findMemberByEmail(deps, entry.email)
+    const existing = entry.email
+      ? await findMemberByEmail(deps, entry.email)
+      : (await listMembers(deps)).find(
+          (m) => !m.isSynthetic && m.displayName.toLowerCase() === entry.displayName.toLowerCase(),
+        )
     const memberId = existing?.memberId ?? ulid()
     const action = existing ? 'update' : 'create'
 
     // Log the local part only; the full address is not written to CI logs.
-    const label = `${entry.email.split('@')[0]}@…`
+    const label = entry.email ? `${entry.email.split('@')[0]}@…` : `${entry.displayName} (pending)`
 
     if (dryRun) {
       console.log(`  would ${action}: ${label} (${entry.role}, ${entry.status})`)
@@ -104,7 +127,8 @@ async function main(): Promise<void> {
     console.log(
       `Roster now holds ${real.length} member(s), ` +
         `${real.filter((m) => m.role === 'admin').length} admin(s), ` +
-        `${real.filter((m) => m.status === 'active').length} active.`,
+        `${real.filter((m) => m.status === 'active').length} active, ` +
+        `${real.filter((m) => !m.email).length} awaiting an address.`,
     )
   }
 }

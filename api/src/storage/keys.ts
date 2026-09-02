@@ -118,11 +118,13 @@ const FAMILY = {
   transaction: 'T',
   member: 'M',
   emailIndex: 'E',
+  linkAudit: 'L',
 } as const
 
 export const ALLOC_RANGE: KeyRange = prefixRange(FAMILY.allocation)
 export const TXN_RANGE: KeyRange = prefixRange(FAMILY.transaction)
 export const MEMBER_RANGE: KeyRange = prefixRange(FAMILY.member)
+export const LINK_AUDIT_RANGE: KeyRange = prefixRange(FAMILY.linkAudit)
 
 // ---------------------------------------------------------------------------
 // CoffeeLedger — partition per member
@@ -189,6 +191,17 @@ export function emailHash(email: string): string {
 export function memberRowKey(memberId: string): string {
   assertLegalKey(memberId, 'memberId')
   return `${FAMILY.member}${SEP}${memberId}`
+}
+
+/**
+ * `L|<invTicks>|<opId>` in the ROSTER partition — an append-only record of an
+ * admin linking an address to a member. It shares the partition with the member
+ * row and the email index, so the link, its uniqueness claim and its audit
+ * entry all commit together or not at all.
+ */
+export function linkAuditRowKey(at: Date, opId: string): string {
+  assertValidOpId(opId)
+  return `${FAMILY.linkAudit}${SEP}${invTicks(at)}${SEP}${opId}`
 }
 
 /** `E|<sha256(email)>` — hashed so the index key carries no address. */

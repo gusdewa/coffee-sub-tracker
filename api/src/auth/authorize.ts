@@ -82,6 +82,12 @@ export async function authorize(
   }
 }
 
+/**
+ * Members are identified by a **personal Google account**. A member whose
+ * address has not been confirmed has no email index row, so this lookup simply
+ * fails — a pending member cannot sign in, and no address is ever inferred
+ * from a corporate alias.
+ */
 async function authorizeGoogleUser(
   deps: RosterDeps,
   token: VerifiedToken,
