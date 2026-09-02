@@ -38,7 +38,9 @@ export function identityTokens(displayName: string | undefined, email: string): 
   const local = email.split('@')[0] ?? ''
   const fromLocal = normalizeName(local.replace(/[._-]+/g, ' '))
   const fromName = normalizeName(displayName ?? '')
-  return [...new Set(`${fromName} ${fromLocal}`.split(' ').filter((t) => t.length >= 2))]
+  // Three characters minimum. Two-letter fragments are noise — they turn up in
+  // hashes and initials and would score a full exact match against everyone.
+  return [...new Set(`${fromName} ${fromLocal}`.split(' ').filter((t) => t.length >= MIN_TOKEN))]
 }
 
 /**
@@ -50,7 +52,9 @@ export function identityTokens(displayName: string | undefined, email: string): 
  * names, which is exactly the population here.
  */
 export function scoreCandidate(tokens: string[], displayName: string): number {
-  const candidateTokens = normalizeName(displayName).split(' ').filter(Boolean)
+  const candidateTokens = normalizeName(displayName)
+    .split(' ')
+    .filter((t) => t.length >= MIN_TOKEN)
   if (candidateTokens.length === 0 || tokens.length === 0) return 0
 
   let best = 0
@@ -64,6 +68,9 @@ export function scoreCandidate(tokens: string[], displayName: string): number {
   }
   return best
 }
+
+/** Shortest token worth comparing. "Roy" survives; "Bo" would not. */
+const MIN_TOKEN = 3
 
 /** Minimum score to offer a prediction at all. */
 const FLOOR = 0.6
