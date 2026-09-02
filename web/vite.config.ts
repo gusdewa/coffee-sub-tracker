@@ -18,8 +18,22 @@ export default defineConfig(({ mode }) => {
   // inspects. Keep it out of the test run.
   const underTest = Boolean(process.env.VITEST)
 
+  // Build identity: the git SHA in CI, 'dev' locally. Rendered in the update
+  // prompt so a two-deploy verification can prove the reload actually landed
+  // on the new build rather than re-rendering the old one.
+  const buildId = (process.env.GITHUB_SHA ?? 'dev').slice(0, 7)
+
   return {
     base: BASE,
+    define: { __APP_VERSION__: JSON.stringify(buildId) },
+    resolve: underTest
+      ? {
+          // The virtual module only exists while the plugin runs, and the
+          // plugin is excluded under test. Alias it so the hook is importable
+          // and suites can vi.mock it.
+          alias: { 'virtual:pwa-register': '/tests/stubs/pwa-register.ts' },
+        }
+      : undefined,
     plugins: [
       react(),
       ...(underTest ? [] : [VitePWA(buildPwaOptions({ base: BASE, apiBaseUrl }))]),

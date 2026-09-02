@@ -1,4 +1,5 @@
 import { currentIdToken } from '../auth/firebase'
+import { withMutationGuard } from '../pwa/mutationGuard'
 
 /**
  * The API client.
@@ -163,23 +164,32 @@ export interface BatchRow {
 
 export const api = {
   me: () => request<MeResponse>('/api/me'),
-  drink: (key: string) => request<DrinkResponse>('/api/me/drinks', { method: 'POST' }, key),
+  drink: (key: string) =>
+    withMutationGuard(() => request<DrinkResponse>('/api/me/drinks', { method: 'POST' }, key)),
   undo: (opId: string, key: string) =>
-    request<{ remainingTotal: number }>(`/api/me/drinks/${opId}/undo`, { method: 'POST' }, key),
+    withMutationGuard(() =>
+      request<{ remainingTotal: number }>(`/api/me/drinks/${opId}/undo`, { method: 'POST' }, key),
+    ),
   history: () => request<{ items: HistoryItem[] }>('/api/me/history'),
   balances: () => request<{ balances: BalanceRow[] }>('/api/balances'),
   batches: () => request<{ batches: BatchRow[] }>('/api/batches'),
   claimOptions: () => request<ClaimOptions>('/api/claim/options'),
   claim: (memberId: string, key: string) =>
-    request<{ bound: boolean }>('/api/claim', { method: 'POST', body: JSON.stringify({ memberId }) }, key),
+    withMutationGuard(() =>
+      request<{ bound: boolean }>('/api/claim', { method: 'POST', body: JSON.stringify({ memberId }) }, key),
+    ),
   adminUnlink: (memberId: string, key: string) =>
-    request<{ unlinked: boolean }>(`/api/admin/members/${memberId}/unlink-email`, { method: 'POST' }, key),
+    withMutationGuard(() =>
+      request<{ unlinked: boolean }>(`/api/admin/members/${memberId}/unlink-email`, { method: 'POST' }, key),
+    ),
   adminMembers: () => request<{ members: MemberRow[] }>("/api/admin/members"),
   adminLinkEmail: (memberId: string, email: string, key: string) =>
-    request<{ linked: boolean }>(
-      `/api/admin/members/${memberId}/link-email`,
-      { method: "POST", body: JSON.stringify({ email }) },
-      key,
+    withMutationGuard(() =>
+      request<{ linked: boolean }>(
+        `/api/admin/members/${memberId}/link-email`,
+        { method: "POST", body: JSON.stringify({ email }) },
+        key,
+      ),
     ),
   adminLinkAudit: () => request<{ entries: LinkAuditEntry[] }>("/api/admin/link-audit"),
   redeemQa: (code: string) =>

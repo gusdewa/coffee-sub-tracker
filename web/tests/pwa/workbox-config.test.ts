@@ -1,4 +1,6 @@
 import { describe, test, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { buildPwaOptions } from '../../pwa.config'
 
 /**
@@ -137,5 +139,28 @@ describe('manifest meets Chrome installability criteria', () => {
     for (const icon of m.icons ?? []) {
       expect(icon.src.startsWith(BASE), `${icon.src} must be base-absolute`).toBe(true)
     }
+  })
+})
+
+describe('recovery from a wedged worker', () => {
+  test('the reset page is never served by the worker it removes', () => {
+    const deny = options.workbox?.navigateFallbackDenylist ?? []
+    expect(deny.length, 'unregister.html needs a navigateFallback denylist entry').toBeGreaterThan(0)
+    expect(deny.some((re) => re.test('/coffee-sub-tracker/unregister.html'))).toBe(true)
+    // It must not swallow ordinary navigations.
+    expect(deny.some((re) => re.test('/coffee-sub-tracker/'))).toBe(false)
+    expect(deny.some((re) => re.test('/coffee-sub-tracker/index.html'))).toBe(false)
+  })
+})
+
+describe('a CSP meta would re-create the lockout', () => {
+  test('index.html ships no Content-Security-Policy meta', () => {
+    // GitHub Pages sends no headers, so a CSP could only go in a <meta> — and
+    // that meta lives inside the precached index.html. A phone would then keep
+    // an old build's CSP indefinitely, which is exactly how a benchmark app
+    // made its own sign-in fix undeliverable. If this ever becomes necessary,
+    // pair it with a verified recovery path before deleting this test.
+    const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf8')
+    expect(html).not.toMatch(/http-equiv=["\']Content-Security-Policy/i)
   })
 })

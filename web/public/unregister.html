@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reset Coffee</title>
+    <style>
+      body { margin: 0; min-height: 100dvh; display: grid; place-items: center;
+             background: #f2f4f1; color: #17202a; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; }
+      main { max-width: 30rem; padding: 24px; text-align: center; }
+      code { background: #fff; padding: 2px 6px; border-radius: 4px; }
+      a { display: inline-block; margin-top: 20px; min-height: 48px; padding: 12px 24px;
+          background: #b4531f; border-radius: 999px; color: #fff; text-decoration: none; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Resetting</h1>
+      <p id="status">Removing the offline copy…</p>
+      <a href="./">Open Coffee</a>
+    </main>
+    <!--
+      The escape hatch for a wedged service worker.
+
+      A worker serves the app shell from its own cache, so a bad build can keep
+      serving itself — including whatever broke sign-in. This page unregisters
+      every worker and clears every cache, and it is on the service worker's
+      navigateFallbackDenylist so it is always fetched from the network and can
+      never be served by the very worker it exists to remove.
+
+      It destroys only client-side state: no token, no server data.
+    -->
+    <script>
+      (async () => {
+        const status = document.getElementById('status')
+        const done = []
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations()
+            await Promise.all(regs.map((r) => r.unregister()))
+            done.push(regs.length + ' worker(s) removed')
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys()
+            await Promise.all(keys.map((k) => caches.delete(k)))
+            done.push(keys.length + ' cache(s) cleared')
+          }
+          status.textContent = done.join(' · ') + '. Open Coffee below.'
+        } catch (err) {
+          status.textContent = 'Could not reset automatically. Clear site data for this page.'
+        }
+      })()
+    </script>
+  </body>
+</html>

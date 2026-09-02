@@ -12,3 +12,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+/** Injected at build time from GITHUB_SHA; 'dev' outside CI. */
+declare const __APP_VERSION__: string

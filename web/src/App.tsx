@@ -11,8 +11,6 @@ import { QaRedeem } from './screens/QaRedeem'
 import { AdminMembers } from './screens/AdminMembers'
 import { ClaimIdentity } from './screens/ClaimIdentity'
 import { OfflineBanner } from './components/OfflineBanner'
-import { UpdateBanner } from './components/UpdateBanner'
-import { useServiceWorker } from './pwa/useServiceWorker'
 
 function SignIn() {
   const [error, setError] = useState<string | null>(null)
@@ -58,7 +56,6 @@ export function App() {
   const [qaActive, setQaActive] = useState(hasQaSession())
   // A verified account with no member yet is not an error — it can claim one.
   const [unbound, setUnbound] = useState(false)
-  const sw = useServiceWorker()
 
   useEffect(() => {
     if (!user && !qaActive) return
@@ -93,7 +90,6 @@ export function App() {
 
   return (
     <div className="app">
-      <UpdateBanner show={sw.needsRefresh} onUpdate={sw.update} />
       <OfflineBanner />
       <main className="app__main">
         <Routes>

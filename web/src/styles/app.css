@@ -523,22 +523,67 @@
 /* --- update banner ------------------------------------------------------- */
 
 .update {
+  /*
+   * Fixed above the nav so it is reachable from every screen, including the
+   * sign-in screen where no app shell exists at all.
+   */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  z-index: 60;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: var(--gap-s);
-  padding: 8px var(--gap-m);
+  width: 100%;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 10px var(--gap-m);
   background: var(--ink);
   color: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
   font-size: var(--step--1);
 }
 
+.update__text {
+  flex: 1;
+}
+
+.update__build {
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
 .update__action {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  background: var(--action);
+  border: none;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update__action:disabled {
   background: transparent;
   border: 1px solid currentColor;
-  border-radius: var(--radius-pill);
   color: inherit;
+  cursor: progress;
+}
+
+.update__dismiss {
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
   cursor: pointer;
 }
 

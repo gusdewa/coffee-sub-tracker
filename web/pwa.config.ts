@@ -60,6 +60,9 @@ export function buildPwaOptions(inputs: PwaInputs): Partial<VitePWAOptions> {
       // Assets only. No JSON, and nothing that could hold rendered private data.
       globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       navigateFallback: `${base}index.html`,
+      // The recovery page must never be served by the worker it exists to
+      // remove, so it is always fetched from the network.
+      navigateFallbackDenylist: [/unregister\.html$/],
       cleanupOutdatedCaches: true,
       // A stale worker must never keep serving an old shell indefinitely.
       clientsClaim: false,
