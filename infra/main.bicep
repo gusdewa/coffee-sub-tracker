@@ -158,6 +158,19 @@ resource vaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+// The Actions principal also seeds the roster, so it needs data-plane access to
+// CoffeeMembers — and to nothing else. It can admit or disable a person; it
+// cannot alter a balance or rewrite an audit row.
+resource seedRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployPrincipalId)) {
+  name: guid(storage.id, 'CoffeeMembers', deployPrincipalId, 'roster-seed')
+  scope: tables[0]
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', tableDataContributorRoleId)
+    principalId: deployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // The Actions principal may deploy this one app — not the plan, not the group.
 resource deployRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployPrincipalId)) {
   name: guid(api.id, deployPrincipalId, 'website-contributor')
