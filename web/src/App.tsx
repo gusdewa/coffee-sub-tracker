@@ -1,8 +1,14 @@
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from './auth/useAuth'
-import { api, hasQaSession, ApiError } from './api/client'
+import { hasQaSession, setQaSession, ApiError } from './api/client'
 import { signInWithGoogle, signOut } from './auth/firebase'
+import { useCoffee, loadMe } from './state/coffee'
+import { useOnboarding } from './onboarding/useOnboarding'
+import { AppHeader } from './shell/AppHeader'
+import { Dock } from './shell/Dock'
+import { DrinkFab } from './shell/DrinkFab'
+import { UndoSnackbar } from './shell/UndoSnackbar'
 import { MyCoffee } from './screens/MyCoffee'
 import { AllBalances } from './screens/AllBalances'
 import { Subscriptions } from './screens/Subscriptions'
@@ -52,23 +58,33 @@ function SignIn() {
 export function App() {
   const { user, loading } = useAuth()
   const location = useLocation()
-  const [isAdmin, setIsAdmin] = useState(false)
   const [qaActive, setQaActive] = useState(hasQaSession())
-  // A verified account with no member yet is not an error — it can claim one.
-  const [unbound, setUnbound] = useState(false)
+  // One /api/me for the whole app. App and My Coffee used to fetch it
+  // independently, so every cold start made the same request twice and the
+  // two copies of the member could disagree.
+  const { data, error } = useCoffee()
 
+  // A verified account with no member yet is not an error — it can claim one.
+  const unbound = error instanceof ApiError && error.code === 'ACCOUNT_UNBOUND'
+  const isAdmin = data?.member.role === 'admin'
+  const signedIn = Boolean(user) || qaActive
+
+  /*
+   * Keyed on the uid, not the user object. `onIdTokenChanged` hands back a new
+   * User instance on every token refresh, and depending on the reference made
+   * this re-fetch on each one — which, because the response updates the store
+   * and the store re-renders App, is a loop rather than a stray request.
+   */
+  const uid = user?.uid ?? null
   useEffect(() => {
-    if (!user && !qaActive) return
-    api.me()
-      .then((me) => {
-        setIsAdmin(me.member.role === 'admin')
-        setUnbound(false)
-      })
-      .catch((err) => {
-        setIsAdmin(false)
-        setUnbound(err instanceof ApiError && err.code === 'ACCOUNT_UNBOUND')
-      })
-  }, [user, qaActive])
+    if (!uid && !qaActive) return
+    void loadMe()
+  }, [uid, qaActive])
+
+  // Only once the balance is in: the tour points at the shell, and the shell is
+  // not on screen until there is something to show in it.
+  const replayTour = useOnboarding(signedIn && !unbound && data !== null)
+
   const isQaRoute = location.pathname.startsWith('/qa')
 
   if (loading) return <div className="screen screen--centred" aria-busy="true" />
@@ -80,7 +96,7 @@ export function App() {
   // Signed in, but this Google account is not yet linked to anyone.
   if (unbound) {
     return (
-      <div className="app">
+      <div className="app app--bare">
         <main className="app__main">
           <ClaimIdentity onBound={() => window.location.reload()} />
         </main>
@@ -88,8 +104,25 @@ export function App() {
     )
   }
 
+  const leave = () => {
+    // A QA session used to survive "Sign out": only Firebase was cleared, so the
+    // tester stayed authenticated against the API with a bearer token the UI had
+    // stopped showing any sign of.
+    setQaSession(null)
+    setQaActive(false)
+    void signOut()
+  }
+
   return (
     <div className="app">
+      {signedIn && (
+        <AppHeader
+          displayName={data?.member.displayName}
+          isAdmin={Boolean(isAdmin)}
+          onSignOut={leave}
+          onReplayTour={replayTour}
+        />
+      )}
       <OfflineBanner />
       <main className="app__main">
         <Routes>
@@ -103,17 +136,19 @@ export function App() {
         </Routes>
       </main>
 
-      {(user || qaActive) && (
-        <nav className="nav" aria-label="Sections">
-          <NavLink to="/" end className="nav__link">My coffee</NavLink>
-          <NavLink to="/everyone" className="nav__link">Everyone</NavLink>
-          <NavLink to="/subscriptions" className="nav__link">Cards</NavLink>
-          <NavLink to="/history" className="nav__link">History</NavLink>
-          {isAdmin && <NavLink to="/manage" className="nav__link">Manage</NavLink>}
-          <button type="button" className="nav__link nav__signout" onClick={() => void signOut()}>
-            Sign out
-          </button>
-        </nav>
+      {signedIn && (
+        <>
+          {/*
+            One fixed row above the dock. The snackbar takes its own line so the
+            Drink action never has to compete with it for width at 320px, and the
+            whole row is pointer-events:none so only the controls are tappable.
+          */}
+          <div className="stack">
+            <UndoSnackbar />
+            <DrinkFab />
+          </div>
+          <Dock />
+        </>
       )}
     </div>
   )

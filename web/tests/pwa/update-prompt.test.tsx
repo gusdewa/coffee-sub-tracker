@@ -87,3 +87,43 @@ describe('UpdatePrompt', () => {
     expect(svg).toHaveAttribute('aria-hidden', 'true')
   })
 })
+
+/**
+ * The prompt and the shell share a bottom edge but may not share an import:
+ * update-reachability.test.ts forbids App.tsx from knowing this component
+ * exists. They coordinate through a custom property instead — one way, from
+ * here outward — so the floating Drink action rides above the prompt rather
+ * than being covered by it.
+ */
+describe('UpdatePrompt layout channel', () => {
+  const measured = (height: number) =>
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get: () => height,
+    })
+
+  beforeEach(() => {
+    document.documentElement.style.removeProperty('--update-h')
+  })
+
+  test('publishes its height while it is showing', () => {
+    measured(56)
+    state.needsRefresh = true
+    render(<UpdatePrompt />)
+    expect(document.documentElement.style.getPropertyValue('--update-h')).toBe('56px')
+  })
+
+  test('takes the space back when it is dismissed', async () => {
+    measured(56)
+    state.needsRefresh = true
+    const user = userEvent.setup()
+    render(<UpdatePrompt />)
+    await user.click(screen.getByRole('button', { name: /dismiss/i }))
+    expect(document.documentElement.style.getPropertyValue('--update-h')).toBe('')
+  })
+
+  test('claims no space when nothing is waiting', () => {
+    render(<UpdatePrompt />)
+    expect(document.documentElement.style.getPropertyValue('--update-h')).toBe('')
+  })
+})

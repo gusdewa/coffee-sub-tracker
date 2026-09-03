@@ -1,20 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCoffee } from '../state/coffee'
 
-/** A tap must never be silently queued, so going offline disables the action. */
+/**
+ * Offline state now lives in the coffee store, so this banner and the Drink
+ * action are guaranteed to agree. They used to be independent: this component
+ * carried a comment saying going offline disables the action, while the button
+ * had no such check and simply failed after the tap.
+ */
 export function OfflineBanner() {
-  const [offline, setOffline] = useState(!navigator.onLine)
-
-  useEffect(() => {
-    const on = () => setOffline(false)
-    const off = () => setOffline(true)
-    window.addEventListener('online', on)
-    window.addEventListener('offline', off)
-    return () => {
-      window.removeEventListener('online', on)
-      window.removeEventListener('offline', off)
-    }
-  }, [])
-
+  const { offline } = useCoffee()
   if (!offline) return null
   return (
     <p className="offline" role="status">

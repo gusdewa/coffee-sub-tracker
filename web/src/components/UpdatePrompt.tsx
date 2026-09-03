@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useServiceWorker } from '../pwa/useServiceWorker'
 
 /**
@@ -36,8 +36,37 @@ function ArrowPath() {
 export function UpdatePrompt() {
   const { needsRefresh, updatedElsewhere, blockedByMutation, update } = useServiceWorker()
   const [dismissed, setDismissed] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
 
   const show = (needsRefresh || updatedElsewhere) && !dismissed
+
+  /*
+   * Publish how much room this is taking at the bottom of the screen.
+   *
+   * The shell's floating Drink action sits directly above the dock, which is
+   * exactly where this sits too — and App.tsx may not import or observe this
+   * component, so it cannot be told directly. A custom property on the root is
+   * a one-way channel that costs the shell nothing and keeps the dependency
+   * pointing outward from here.
+   */
+  useEffect(() => {
+    const root = document.documentElement
+    const el = box.current
+    if (!show || !el) {
+      root.style.removeProperty('--update-h')
+      return
+    }
+    const publish = () => root.style.setProperty('--update-h', `${el.offsetHeight}px`)
+    publish()
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(el)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty('--update-h')
+    }
+  }, [show])
+
   if (!show) return null
 
   const label = blockedByMutation
@@ -47,7 +76,7 @@ export function UpdatePrompt() {
       : 'A new version is ready'
 
   return (
-    <div className="update" role="status" aria-live="polite">
+    <div ref={box} className="update" role="status" aria-live="polite">
       <span className="update__text">
         {label}
         <span className="update__build"> · {typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'}</span>

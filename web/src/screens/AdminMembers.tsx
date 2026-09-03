@@ -90,7 +90,6 @@ export function AdminMembers() {
 
   return (
     <div className="screen">
-      <h2 className="screen__title">Manage</h2>
 
       <p aria-live="polite" className="visually-hidden">
         {announcement}

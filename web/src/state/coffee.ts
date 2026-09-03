@@ -92,6 +92,17 @@ export function useCoffee(): CoffeeState {
   return useSyncExternalStore(subscribeCoffee, getCoffeeState, getCoffeeState)
 }
 
+const getRevision = () => state.revision
+
+/**
+ * For screens that own their own request. History, Team and Cards each fetch a
+ * different endpoint, so a drink taken from the FAB while one of them is on
+ * screen would otherwise leave it displaying a number that is now wrong.
+ */
+export function useCoffeeRevision(): number {
+  return useSyncExternalStore(subscribeCoffee, getRevision, getRevision)
+}
+
 /** Load the balance. The rejection is kept: App reads it to detect an unbound account. */
 export async function loadMe(): Promise<void> {
   try {
