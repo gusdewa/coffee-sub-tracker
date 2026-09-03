@@ -27,3 +27,4 @@ __azurite__/
 web/playwright-report/
 web/test-results/
 web/.build-test/
+.worktrees/
