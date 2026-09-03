@@ -16,7 +16,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Pages used to publish on every push with nothing able to stop it, so a red
+  # suite shipped regardless. `deploy-api.yml` has always gated itself this way;
+  # the web deploy now matches. Self-contained rather than a `workflow_run` on
+  # CI, so the gate cannot be defeated by a race between two workflows.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -b web/tsconfig.json --noEmit
+
+      # Before the unit tests: `generated-sw.test.ts` reads dist/sw.js and skips
+      # when it is absent, so building afterwards makes that guard vacuous.
+      - name: Build web
+        run: npm run build -w @coffee-sub/web
+
+      - name: Web tests
+        run: npm test -w @coffee-sub/web
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Update lifecycle e2e
+        run: npm run test:e2e -w @coffee-sub/web
+
+      - name: Upload e2e report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-deploy
+          path: web/playwright-report/
+          retention-days: 7
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     environment: production
     steps:

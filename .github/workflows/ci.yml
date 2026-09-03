@@ -39,11 +39,14 @@ jobs:
       - name: API tests
         run: npm test -w @coffee-sub/api
 
-      - name: Web tests
-        run: npm test -w @coffee-sub/web
-
+      # Before the web tests, not after: `generated-sw.test.ts` reads
+      # dist/sw.js and skips when it is absent, so building afterwards left
+      # the built-worker guard silently vacuous in CI.
       - name: Build web
         run: npm run build -w @coffee-sub/web
+
+      - name: Web tests
+        run: npm test -w @coffee-sub/web
 
       # The update lifecycle is only provable against a real worker in a real
       # browser: an old tab, a new build, the prompt while signed out, then

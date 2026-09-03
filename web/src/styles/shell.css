@@ -1,0 +1,434 @@
+/*
+ * The shell: header, dock, floating Drink action, undo snackbar, profile menu.
+ *
+ * The old shell was four to six identical text links in a row with sign-out
+ * among them, and an active state made of coloured text and a hairline. This
+ * one is a ticket: the dock is the tear-off stub at the bottom of a punch card,
+ * the active destination is a punched hole, and Drink is the stamp you press.
+ * Nothing here invents a second visual language — the marks, the paper and the
+ * plantation green all come from the card the app is already built around.
+ */
+
+/* --- header -------------------------------------------------------------- */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  padding-top: env(safe-area-inset-top);
+  background: var(--paper);
+  border-bottom: 1px solid var(--paper-edge);
+}
+
+.app-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-s);
+  max-width: var(--column);
+  min-height: 3.5rem;
+  margin: 0 auto;
+  padding: 0 var(--gap-m);
+}
+
+.app-header__title {
+  margin: 0;
+  font-size: var(--step-1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  /* A long member name must shorten, never push the profile button off-screen. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- profile ------------------------------------------------------------- */
+
+.profile {
+  position: relative;
+  flex: none;
+}
+
+.profile__trigger {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: var(--punch-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--punch);
+  font-size: var(--step--1);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.profile__trigger:hover {
+  border-color: var(--punch);
+}
+
+.profile__trigger:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+/*
+ * A transparent sheet rather than a document listener: a tap outside is a real
+ * click on a real element, so it works the same under touch, mouse and tests.
+ */
+.profile__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-menu);
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.profile__menu {
+  position: absolute;
+  top: calc(100% + var(--gap-xs));
+  right: 0;
+  z-index: var(--z-menu);
+  min-width: min(15rem, calc(100vw - 2 * var(--gap-m)));
+  padding: var(--gap-xs);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+}
+
+.profile__identity {
+  display: grid;
+  gap: 2px;
+  padding: var(--gap-s) var(--gap-s) var(--gap-xs);
+}
+
+.profile__name {
+  font-weight: 600;
+}
+
+.profile__role {
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+
+.profile__item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--gap-s);
+  background: none;
+  border: none;
+  border-radius: calc(var(--radius-card) - 2px);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.profile__item:hover {
+  background: var(--punch-soft);
+}
+
+/*
+ * Sign out is terminal, so it is separated and coloured rather than sitting in
+ * the same rhythm as the things you might tap by accident on the way past.
+ */
+.profile__item--danger {
+  margin-top: var(--gap-xs);
+  padding-top: var(--gap-xs);
+  border-top: 1px solid var(--paper-edge);
+  border-radius: 0 0 calc(var(--radius-card) - 2px) calc(var(--radius-card) - 2px);
+  color: var(--alert);
+}
+
+.profile__item--danger:hover {
+  background: color-mix(in srgb, var(--alert) 10%, transparent);
+}
+
+/* --- dock ---------------------------------------------------------------- */
+
+.dock {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: var(--z-dock);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  /*
+   * Pad in by whatever the viewport exceeds the content column, so the dock
+   * stays under the column it belongs to instead of splaying across a 1440px
+   * window.
+   */
+  padding-inline: max(0px, calc((100% - var(--column)) / 2));
+  padding-bottom: env(safe-area-inset-bottom);
+  /* min-height, not height: large text grows the bar instead of clipping it. */
+  min-height: calc(var(--dock-height) + env(safe-area-inset-bottom));
+  background: var(--paper-raised);
+  border-top: 1px solid var(--paper-edge);
+}
+
+/* The tear edge. This is the one decorative move in the shell. */
+.dock::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background: radial-gradient(circle at center, var(--paper) 0 3.5px, transparent 3.6px)
+    repeat-x;
+  background-size: 14px 10px;
+  pointer-events: none;
+}
+
+.dock__link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: var(--gap-xs) 2px;
+  color: var(--ink-soft);
+  font-size: var(--step--2);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+}
+
+/*
+ * The punched hole. The selected state is carried by fill, shape, icon weight
+ * and aria-current together — never by colour alone.
+ */
+.dock__pill {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 1.875rem;
+  border-radius: var(--radius-pill);
+  transition: background-color 140ms ease;
+}
+
+.dock__link.active {
+  color: var(--punch);
+}
+
+.dock__link.active .dock__pill {
+  background: var(--punch-soft);
+}
+
+.dock__label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- the bottom stack: snackbar above the Drink action ------------------- */
+
+.stack {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /*
+   * --update-h is published by UpdatePrompt while it is showing. App.tsx may
+   * not import or observe the prompt (tests/pwa/update-reachability.test.ts
+   * forbids it), so the two coordinate through a custom property instead and
+   * the Drink action rides up rather than being covered.
+   */
+  bottom: calc(
+    var(--dock-height) + env(safe-area-inset-bottom) + var(--update-h) + var(--gap-stack)
+  );
+  z-index: var(--z-fab);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--gap-stack);
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 0 var(--gap-m);
+  /* The row spans the column; only its children are tappable. */
+  pointer-events: none;
+}
+
+.stack > * {
+  pointer-events: auto;
+}
+
+.fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-xs);
+  min-height: 3.25rem;
+  padding: 0 var(--gap-m);
+  background: var(--action);
+  border: none;
+  border-radius: var(--radius-stamp);
+  box-shadow: var(--shadow-lift);
+  color: #fff;
+  font-size: var(--step-0);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, scale 120ms ease;
+}
+
+.fab:hover:not(:disabled) {
+  background: var(--action-press);
+}
+
+.fab:active:not(:disabled) {
+  scale: 0.96;
+}
+
+.fab:disabled {
+  background: var(--spent);
+  box-shadow: none;
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+.fab:focus-visible {
+  border-radius: var(--radius-stamp);
+}
+
+.fab__label {
+  white-space: nowrap;
+}
+
+.snackbar {
+  z-index: var(--z-snackbar);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+  align-self: stretch;
+  padding: var(--gap-xs) var(--gap-xs) var(--gap-xs) var(--gap-m);
+  background: var(--ink);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+  color: var(--paper);
+  font-size: var(--step--1);
+}
+
+.snackbar__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.snackbar__action {
+  flex: none;
+  min-height: 44px;
+  padding: 0 var(--gap-m);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.snackbar__action:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/*
+ * Reduced motion: the blanket rule in tokens.css zeroes durations but leaves
+ * transforms and scale alone, so they are suppressed at the source here.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .fab:active:not(:disabled) {
+    scale: 1;
+  }
+}
+
+/* --- onboarding tour ----------------------------------------------------- */
+
+/*
+ * Driver.js ships z-index: 1000000000, which would sit outside the ladder
+ * entirely. Pull it back onto --z-tour so the contract stays true, and dress
+ * the popover as Coffee Sub rather than as Driver.js.
+ */
+.driver-popover.coffee-tour,
+.driver-overlay {
+  z-index: var(--z-tour);
+}
+
+.driver-popover.coffee-tour {
+  max-width: min(20rem, calc(100vw - 2 * var(--gap-m)));
+  padding: var(--gap-m);
+  background: var(--paper-raised);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--step-0);
+}
+
+.driver-popover.coffee-tour .driver-popover-title {
+  color: var(--ink);
+  font-size: var(--step-1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.driver-popover.coffee-tour .driver-popover-description {
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.driver-popover.coffee-tour .driver-popover-progress-text {
+  color: var(--ink-faint);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+.driver-popover.coffee-tour .driver-popover-footer {
+  gap: var(--gap-xs);
+  margin-top: var(--gap-s);
+}
+
+.driver-popover.coffee-tour .driver-popover-footer button {
+  min-height: 44px;
+  padding: 0 var(--gap-m);
+  background: transparent;
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-shadow: none;
+}
+
+.driver-popover.coffee-tour .driver-popover-next-btn {
+  background: var(--action);
+  border-color: var(--action);
+  color: #fff;
+}
+
+.driver-popover.coffee-tour .driver-popover-arrow {
+  color: var(--paper-raised);
+}
+
+/* The tour's own Skip control, added through onPopoverRender. */
+.coffee-tour__skip {
+  min-height: 44px;
+  padding: 0 var(--gap-s);
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

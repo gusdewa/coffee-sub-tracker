@@ -28,12 +28,17 @@
 
   --radius-card: 10px;
   --radius-pill: 999px;
+  /* The Drink action is a stamp, not a circle. */
+  --radius-stamp: 16px;
+
+  --shadow-lift: 0 10px 24px rgb(23 32 42 / 0.18);
 
   /*
    * Fluid steps. The viewport range that matters is 320-430px: a fixed scale
    * reads cramped on an SE and undersized on a Pro Max. Each step interpolates
    * between those, then settles so desktop never inflates.
    */
+  --step--2: clamp(0.69rem, 0.66rem + 0.14vw, 0.75rem);
   --step--1: clamp(0.78rem, 0.74rem + 0.2vw, 0.85rem);
   --step-0: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
   --step-1: clamp(1.15rem, 1.05rem + 0.5vw, 1.35rem);
@@ -45,11 +50,44 @@
   --gap-s: 0.75rem;
   --gap-m: 1.25rem;
   --gap-l: 2rem;
+  /* The rhythm of the fixed bottom stack: dock -> FAB -> snackbar -> update. */
+  --gap-stack: 0.5rem;
 
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 
-  --nav-height: 4rem;
+  /*
+   * The dock's own height, before the safe area. Everything anchored to the
+   * bottom derives from this one number, so the bar can grow for large text
+   * without anything above it being measured by hand.
+   */
+  --dock-height: 4.25rem;
+  /* The content column, previously a 34rem literal repeated in four rules. */
+  --column: 34rem;
+
+  /*
+   * What covers what.
+   *
+   * Before this the app had exactly two z-indexes — .action at 2 and .update at
+   * 60 — while .nav had none and relied on document order. Both fixed layers
+   * shared a `bottom`, so the update toast sat on the Drink button. Every fixed
+   * layer now names its level here and nothing sets a raw z-index; the ladder is
+   * asserted in tests/styles/stacking.test.ts.
+   *
+   * --z-update stays at 60: the e2e suite pins `.update` by class and by copy,
+   * and the shell is built to sit around it rather than move it.
+   */
+  --z-header: 20;
+  --z-dock: 30;
+  --z-fab: 40;
+  --z-snackbar: 50;
+  --z-update: 60;
+  --z-menu: 70;
+  --z-tour: 80;
+  --z-dialog: 90;
+
+  /* Published by UpdatePrompt while it is visible; see shell.css. */
+  --update-h: 0px;
 }
 
 @media (prefers-color-scheme: dark) {
