@@ -26,6 +26,11 @@ jobs:
   # discover the suite was never run.
   test:
     runs-on: ubuntu-latest
+    # Job level so the build and the tests that inspect its output cannot
+    # disagree. Two steps each carrying their own copy is the same latent bug
+    # that broke the Pages run, just currently in agreement.
+    env:
+      VITE_BASE_PATH: /
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,13 +45,9 @@ jobs:
       # Before the unit tests: generated-sw.test.ts reads dist/sw.js and skips
       # when it is absent. Built at the root base, which is what ships here.
       - name: Build web
-        env:
-          VITE_BASE_PATH: /
         run: npm run build -w @coffee-sub/web
 
       - name: Web tests
-        env:
-          VITE_BASE_PATH: /
         run: npm test -w @coffee-sub/web
 
       - name: Install Playwright browsers
@@ -67,6 +68,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     environment: production
+    # Root base: Cloudflare Pages serves this project at the domain root,
+    # unlike the GitHub Pages project site. Same source, different input.
+    env:
+      VITE_BASE_PATH: /
     outputs:
       url: ${{ steps.publish.outputs.deployment-url }}
     steps:
@@ -77,11 +82,8 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # Root base: Cloudflare Pages serves this project at the domain root,
-      # unlike the GitHub Pages project site. Same source, different input.
       - name: Build
         env:
-          VITE_BASE_PATH: /
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}

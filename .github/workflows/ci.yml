@@ -8,6 +8,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Explicit, and matching the canonical production host, so CI exercises the
+    # base people actually load rather than whatever the default happens to be.
+    # Both bases are still asserted directly in tests/build/artifacts.test.ts.
+    env:
+      VITE_BASE_PATH: /coffee-sub-tracker/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
