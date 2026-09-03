@@ -6,9 +6,9 @@ import { isOffline, subscribeOnline } from './online'
  * The balance, and the two things you can do to it.
  *
  * This used to live inside the My Coffee screen, which had two consequences.
- * A drink was only possible on one route — and, worse, the 90-second undo was
+ * A drink was only possible on one route — and, worse, the Put it back offer was
  * component state destroyed on unmount, so tapping History silently threw away
- * a live window with 89 seconds left on it. The server would still have
+ * a live offer with time left on it. The server would still have
  * accepted the reversal; the interface had simply forgotten the op id.
  *
  * A module store rather than a context, following `pwa/mutationGuard.ts`: it
@@ -21,13 +21,8 @@ import { isOffline, subscribeOnline } from './online'
  * key that makes a retry safe.
  */
 
-/**
- * Mirrors `UNDO_WINDOW_SECONDS` in api/src/domain/undo.ts. Duplicated rather
- * than served, and deliberately so for now — the API would have to expose it on
- * /api/me for the two to be provably in step. If that value ever moves, this
- * one has to move with it.
- */
-export const UNDO_SECONDS = 90
+/** The UI deliberately offers Put it back for less time than the server allows. */
+export const PUT_IT_BACK_DISPLAY_SECONDS = 10
 
 export interface UndoOffer {
   opId: string
@@ -149,11 +144,14 @@ export async function drink(): Promise<DrinkResponse | null> {
       undo: {
         opId: result.opId,
         batchLabel: result.batchLabel,
-        until: Date.now() + UNDO_SECONDS * 1000,
+        until: Date.now() + PUT_IT_BACK_DISPLAY_SECONDS * 1000,
       },
       revision: state.revision + 1,
     })
-    undoTimer = setTimeout(() => set({ undo: null }), UNDO_SECONDS * 1000)
+    undoTimer = setTimeout(() => {
+      undoTimer = undefined
+      set({ undo: null })
+    }, PUT_IT_BACK_DISPLAY_SECONDS * 1000)
     void loadMe()
     return result
   } catch (err) {

@@ -93,7 +93,7 @@ describe('the coffee store', () => {
     await store.drink()
 
     // The undo lives in the module, not in whichever screen happened to be
-    // mounted. Navigating away used to destroy a live 90-second window.
+    // mounted. Navigating away used to destroy a live display window.
     expect(store.getCoffeeState().undo).toMatchObject({
       opId: 'op1',
       batchLabel: 'September beans',
@@ -109,29 +109,39 @@ describe('the coffee store', () => {
     await store.loadMe()
 
     await store.drink()
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(5_000)
     await store.drink()
     expect(store.getCoffeeState().undo?.opId).toBe('op2')
 
-    // 81s after the second drink: the first drink's stale timeout would fire at
-    // 90s from *its* start and wrongly clear this one.
-    await vi.advanceTimersByTimeAsync(81_000)
+    // Past the first drink's 10-second display expiry, the second offer remains.
+    await vi.advanceTimersByTimeAsync(6_000)
     expect(store.getCoffeeState().undo?.opId).toBe('op2')
 
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(5_000)
     expect(store.getCoffeeState().undo).toBeNull()
   })
 
-  test('the undo window expires on its own after 90 seconds', async () => {
+  test('the Put it back offer expires on its own after 10 seconds', async () => {
     vi.useFakeTimers()
     drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
     await store.loadMe()
     await store.drink()
 
-    await vi.advanceTimersByTimeAsync(89_000)
+    await vi.advanceTimersByTimeAsync(9_000)
     expect(store.getCoffeeState().undo).not.toBeNull()
-    await vi.advanceTimersByTimeAsync(2_000)
+    await vi.advanceTimersByTimeAsync(1_000)
     expect(store.getCoffeeState().undo).toBeNull()
+  })
+
+  test('reset cleans up the pending Put it back expiry timer', async () => {
+    vi.useFakeTimers()
+    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    await store.loadMe()
+    await store.drink()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    store.resetCoffeeStore()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   test('a double tap sends one request with one idempotency key', async () => {

@@ -1,7 +1,7 @@
 import { useCoffee, undoDrink } from '../state/coffee'
 
 /**
- * The 90 seconds in which a cup was a mistake.
+ * The 10 seconds in which the interface offers to put a cup back.
  *
  * It rides above the dock rather than sitting inside one screen, because the
  * undo now outlives the screen that created it. There is deliberately no

@@ -4,7 +4,7 @@
 
 **Goal:** Make the floating Drink action recover from externally changed balances and automatically hand a truthful post-consumption recap to WhatsApp.
 
-**Architecture:** Deduplicate authoritative balance refreshes in the coffee store, trigger them on authenticated resume/reconnect, and return the Drink response to the button. The button pre-opens a window during the trusted click, then a pure WhatsApp helper formats current balances and navigates that window only after success.
+**Architecture:** Deduplicate authoritative balance refreshes in the coffee store, trigger them on authenticated resume/reconnect, and return the Drink response to the button. During the trusted click the button synchronously reserves a named secondary browsing context (`coffee-sub-wa-handoff`, opener severed); after the mutation and balance fetch succeed, a pure WhatsApp helper formats the recap and navigates that reserved context to wa.me. Failure or an undo before the recap closes the context; a blocked reservation falls back to a same-context jump, then a visible link — navigation only, never a second mutation.
 
 **Tech Stack:** React 18, TypeScript, Vitest, Testing Library, Vite PWA, WhatsApp `wa.me` web handoff.
 
@@ -33,24 +33,24 @@
 - [ ] Implement pure `formatCoffeeRecap` and `whatsAppShareUrl` helpers without group-name targeting claims.
 - [ ] Run the helper tests and confirm they pass.
 
-### Task 3: Orchestrate the trusted-click handoff
+### Task 3: Orchestrate the reserved-context handoff
 
 **Files:**
 - Modify: `web/src/state/coffee.ts`
 - Modify: `web/src/shell/DrinkFab.tsx`
-- Modify: `web/tests/shell/DrinkFab.test.tsx`
+- Test: `web/tests/shell/DrinkFab.test.tsx`
 
-- [ ] Write failing component tests proving the click synchronously pre-opens one window, a successful Drink fetches balances and navigates it to the encoded recap, a balance-fetch failure navigates with a truthful self-only fallback, and a Drink failure closes it.
+- [ ] Write failing component tests proving the click synchronously reserves one named window with its opener severed, nothing jumps before success, a successful Drink fetches balances and navigates the reserved window to the encoded recap, a balance-fetch failure jumps with a truthful self-only fallback, a Drink failure closes the window, and an undo before the recap closes it.
 - [ ] Change `drink()` to return its successful `DrinkResponse` or `null` without weakening idempotency, mutation guarding, or existing UI errors.
-- [ ] Implement the handoff orchestration in DrinkFab. Use the named target `coffee-whatsapp-share` so repeated actions do not create uncontrolled tabs.
+- [ ] Implement the reserved-context handoff orchestration in DrinkFab, using the named target `coffee-sub-wa-handoff` so repeated drinks reuse one tab, closing the reservation on failure/undo, and falling back to a same-context jump then a visible link when the reservation is blocked.
+- [ ] Update the e2e fixture to intercept `wa.me` at the browser-context level, because the jump happens in the reserved popup; keep the `whatsappHandoffs()` capture API.
 - [ ] Run DrinkFab and coffee-store tests and confirm they pass.
 
-### Task 4: Full verification and deployment
+### Task 4: Full verification
 
 **Files:**
 - Modify only if a gate exposes a focused defect.
 
 - [ ] Run all repository test, lint, typecheck, build, security, PWA lifecycle, and browser suites defined by package scripts/workflows.
 - [ ] Inspect the diff for secrets, unrelated changes, and API caching regressions.
-- [ ] Commit the implementation and push `main`.
-- [ ] Verify the GitHub Actions workflow conclusion, Pages HTTP 200, deployed build provenance, and production handoff behavior without actually sending a WhatsApp message.
+- [ ] Report verification results without committing, pushing, deploying, or mutating production data.

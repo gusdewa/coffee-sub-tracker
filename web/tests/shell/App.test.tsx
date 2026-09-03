@@ -64,6 +64,7 @@ const at = (path = '/') =>
 beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(window, 'open').mockReturnValue(null)
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   store.resetCoffeeStore()
   localStorage.clear()
   // Finished, so the walkthrough does not open over these assertions.

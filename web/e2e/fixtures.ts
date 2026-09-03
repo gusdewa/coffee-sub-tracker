@@ -33,9 +33,21 @@ export async function signedInShell(
   page: Page,
   url: string,
   { role = 'member', remaining = 5, batches = 1, tourSeen = true }: Fixture = {},
-): Promise<{ drinks: () => number }> {
+): Promise<{ drinks: () => number; whatsappHandoffs: () => string[] }> {
   let drinkCount = 0
   let total = remaining
+  const whatsappHandoffs: string[] = []
+
+  // A real browser proves the post-success jump is an actual wa.me navigation.
+  // The jump happens in the reserved secondary context — a popup — so the
+  // interception has to live on the browser context: page-level routing never
+  // sees requests made from other pages. Abort at that boundary so the rest of
+  // the shell suite can keep asserting local undo and layout state in the PWA
+  // window, which never navigates away.
+  await page.context().route('https://wa.me/**', (route) => {
+    whatsappHandoffs.push(route.request().url())
+    return route.abort()
+  })
 
   const allocations = (left: number) => [
     {
@@ -124,5 +136,8 @@ export async function signedInShell(
 
   await page.goto(`${url}#/qa?code=TESTCODE`)
   await page.waitForSelector('.dock', { state: 'visible' })
-  return { drinks: () => drinkCount }
+  return {
+    drinks: () => drinkCount,
+    whatsappHandoffs: () => [...whatsappHandoffs],
+  }
 }

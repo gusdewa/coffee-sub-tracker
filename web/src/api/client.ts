@@ -68,7 +68,9 @@ async function request<T>(
 
   let res: Response
   try {
-    res = await fetch(`${BASE}${path}`, { ...init, headers })
+    // Balance refreshes must reach the API: a browser HTTP-cache hit would keep
+    // an externally granted subscription invisible even after resume/reconnect.
+    res = await fetch(`${BASE}${path}`, { cache: 'no-store', ...init, headers })
   } catch {
     throw new OfflineError()
   }

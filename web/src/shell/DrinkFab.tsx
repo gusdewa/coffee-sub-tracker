@@ -6,6 +6,7 @@ import { ErrorState } from '../components/ErrorState'
 import {
   formatCoffeeRecap,
   navigateWhatsAppHandoff,
+  reserveWhatsAppHandoffWindow,
   whatsAppShareUrl,
 } from '../sharing/whatsapp'
 
@@ -16,8 +17,7 @@ import {
  * that screen's local state. It is the thing the app is for, so it follows you.
  *
  * The label is always rendered. An unlabelled cup glyph is a guess, and the one
- * irreversible-feeling action in the app is a poor place to make people guess —
- * the 90-second undo notwithstanding.
+ * irreversible-feeling action in the app is a poor place to make people guess.
  */
 export function DrinkFab() {
   const { data, busy, offline, error } = useCoffee()
@@ -41,16 +41,21 @@ export function DrinkFab() {
 
   const handleDrink = async () => {
     setShareUrl(null)
-    // Open synchronously while this handler still has the trusted click. wa.me
-    // cannot target Cart Coffee (temp); it will ask the member to choose a chat.
-    const handoff = window.open('about:blank', 'coffee-whatsapp-share')
-    if (handoff) handoff.opener = null
+    // The reservation must happen inside the trusted click: once the mutation
+    // resolves, the user activation is spent and opening a context would be
+    // popup-blocked. The named context stays inert until the recap is real, so
+    // WhatsApp is never reached — and the PWA document never moves — unless
+    // the server has actually taken the cup.
+    const reserved = reserveWhatsAppHandoffWindow()
     const result = await drink()
     if (!result) {
-      handoff?.close()
+      reserved?.close()
       return
     }
-    if (!data) return
+    if (!data) {
+      reserved?.close()
+      return
+    }
 
     let balances
     let balanceState: 'complete' | 'partial' = 'complete'
@@ -72,7 +77,7 @@ export function DrinkFab() {
     // Undo and the recap request run independently. Never hand off a message
     // about a cup that was successfully put back while balances were loading.
     if (wasDrinkUndone(result.opId)) {
-      handoff?.close()
+      reserved?.close()
       return
     }
 
@@ -82,8 +87,14 @@ export function DrinkFab() {
       balances,
       balanceState,
     })
-    if (!navigateWhatsAppHandoff(handoff, message)) {
-      setShareUrl(whatsAppShareUrl(message))
+    const url = whatsAppShareUrl(message)
+    // Preferred path: the PWA keeps its document and undo offer; the reserved
+    // secondary context takes the jump. If the reservation was blocked, or the
+    // context vanished mid-flight, degrade to a same-context jump and then to
+    // a visible link. Only the navigation degrades — the cup was consumed
+    // exactly once on every path, so no fallback ever re-mutates.
+    if (!reserved?.navigate(url) && !navigateWhatsAppHandoff(message)) {
+      setShareUrl(url)
     }
   }
 

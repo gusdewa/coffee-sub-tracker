@@ -52,7 +52,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     target: 'nav-history',
     title: 'Changed your mind?',
-    body: 'Every cup is listed here, and you have 90 seconds to put one back.',
+    body: 'Every cup is listed here, and you have 10 seconds to put one back.',
   },
 ]
 

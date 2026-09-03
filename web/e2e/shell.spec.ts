@@ -139,6 +139,18 @@ test('a cup can be taken from any screen, and put back', async ({ page }, info) 
   await page.locator('.fab').click()
   await expect(page.locator('.snackbar')).toContainText('One cup from September beans.')
   expect(api.drinks()).toBe(1)
+  await expect.poll(() => api.whatsappHandoffs()).toHaveLength(1)
+  const message = decodeURIComponent(new URL(api.whatsappHandoffs()[0]!).searchParams.get('text')!)
+  expect(message).toContain('Cart Coffee')
+  expect(message).toContain('Dewa Wijaya drank 1 cup')
+  expect(message).toContain('Dewa Wijaya: 4 cups')
+  expect(message).toContain('Total remaining: 4 cups')
+
+  // The jump left through the reserved secondary context, so the PWA window
+  // keeps its document, its snackbar and its route — this is what the old
+  // same-context navigation destroyed on mobile Chromium.
+  expect(page.url()).toContain(server.url)
+  await expect(page.locator('.snackbar')).toBeVisible()
   await shot(page, '22-shell-undo-offered', info.project.name)
 
   await page.locator('.snackbar__action').click()

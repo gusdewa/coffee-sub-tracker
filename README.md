@@ -2,7 +2,7 @@
 
 Office coffee subscription balances, replacing a WhatsApp thread. Sign in with
 Google, see how many cups you have left, tap **Drink**. It comes off your
-oldest card first, and you have 90 seconds to put it back.
+oldest card first, and the interface offers 10 seconds to put it back.
 
 - **Frontend** — React + TypeScript + Vite, host-neutral: a GitHub Pages
   project site today, buildable for Cloudflare Pages at the root
@@ -119,8 +119,15 @@ at all.**
   documented here but never actually implemented, and the tap simply failed
   after the fact.
 - **Drinking belongs to the shell, not to a screen.** The action and its
-  90-second undo live in `web/src/state/coffee.ts`, so a cup can be taken from
+  10-second Put it back offer live in `web/src/state/coffee.ts`, so a cup can be taken from
   any route and navigating away no longer discards a live undo window.
+- **The WhatsApp jump never leaves the app's own window.** The Drink click
+  reserves a named secondary browsing context (`coffee-sub-wa-handoff`, opener
+  severed) while the gesture is still trusted; only after the server confirms
+  the cup — and the current balances load — does that context jump to `wa.me`
+  with the recap. A failed Drink, or a Put it back before the recap is ready,
+  closes the reserved context instead. A blocked reservation falls back to a
+  same-context jump, then a visible link, and never consumes a second cup.
 
 ## Still outstanding
 
