@@ -57,7 +57,13 @@ const initial = (): CoffeeState => ({
 let state: CoffeeState = initial()
 const listeners = new Set<() => void>()
 let undoTimer: ReturnType<typeof setTimeout> | undefined
-let loadMeRequest: Promise<void> | null = null
+interface LoadMeRequest {
+  revision: number
+  promise: Promise<void>
+}
+
+let loadMeRequest: LoadMeRequest | null = null
+const reversedDrinkOps = new Set<string>()
 
 function set(patch: Partial<CoffeeState>): void {
   state = { ...state, ...patch }
@@ -104,22 +110,26 @@ export function useCoffeeRevision(): number {
 
 /** Load the balance, sharing an authoritative request with overlapping callers. */
 export function loadMe(): Promise<void> {
-  if (loadMeRequest) return loadMeRequest
+  const revision = state.revision
+  if (loadMeRequest?.revision === revision) return loadMeRequest.promise
 
-  loadMeRequest = (async () => {
+  const promise = (async () => {
     try {
       const data = await api.me()
-      set({ data, error: null })
+      // A request begun before a mutation is no longer authoritative. In
+      // particular, it must not replace the mutation response with old data.
+      if (state.revision === revision) set({ data, error: null })
     } catch (err) {
       // The rejection is kept: App reads it to detect an unbound account.
-      set({ error: err as Error })
+      if (state.revision === revision) set({ error: err as Error })
     }
   })()
-  const currentRequest = loadMeRequest
-  void currentRequest.finally(() => {
+  const currentRequest = { revision, promise }
+  loadMeRequest = currentRequest
+  void promise.finally(() => {
     if (loadMeRequest === currentRequest) loadMeRequest = null
   })
-  return currentRequest
+  return promise
 }
 
 export async function drink(): Promise<DrinkResponse | null> {
@@ -162,6 +172,7 @@ export async function undoDrink(): Promise<void> {
   set({ busy: true, error: null })
   try {
     const result = await api.undo(offer.opId, crypto.randomUUID())
+    reversedDrinkOps.add(offer.opId)
     clearUndoTimer()
     set({
       data: state.data ? { ...state.data, totalRemaining: result.remainingTotal } : state.data,
@@ -176,6 +187,11 @@ export async function undoDrink(): Promise<void> {
   }
 }
 
+/** True only when this client successfully reversed the named Drink. */
+export function wasDrinkUndone(opId: string): boolean {
+  return reversedDrinkOps.has(opId)
+}
+
 /** Clear a transient error without discarding the balance behind it. */
 export function dismissCoffeeError(): void {
   set({ error: null })
@@ -186,5 +202,6 @@ export function resetCoffeeStore(): void {
   clearUndoTimer()
   listeners.clear()
   loadMeRequest = null
+  reversedDrinkOps.clear()
   state = initial()
 }

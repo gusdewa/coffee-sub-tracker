@@ -1,5 +1,5 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -72,7 +72,34 @@ beforeEach(() => {
   historyCall.mockResolvedValue({ items: [] })
 })
 
+afterEach(() => vi.useRealTimers())
+
 describe('the signed-in shell', () => {
+  test('polls visible authenticated sessions every 60 seconds and cleans the timer up', async () => {
+    vi.useFakeTimers()
+    let visibility: DocumentVisibilityState = 'visible'
+    const visibilitySpy = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockImplementation(() => visibility)
+    const view = at()
+    await act(async () => {})
+    expect(me).toHaveBeenCalledTimes(1)
+
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(me).toHaveBeenCalledTimes(2)
+
+    visibility = 'hidden'
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(me).toHaveBeenCalledTimes(2)
+
+    view.unmount()
+    visibility = 'visible'
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(me).toHaveBeenCalledTimes(2)
+    visibilitySpy.mockRestore()
+    vi.useRealTimers()
+  })
+
   test.each([
     ['becomes visible', () => document.dispatchEvent(new Event('visibilitychange'))],
     ['comes online', () => window.dispatchEvent(new Event('online'))],

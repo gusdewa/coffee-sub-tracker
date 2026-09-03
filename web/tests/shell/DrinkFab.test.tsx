@@ -115,6 +115,53 @@ describe('the Drink action', () => {
     expect(message).toContain('September beans')
     expect(message).toContain('Dewa: 4 cups')
     expect(message).not.toContain('Ayu')
+    expect(message).toContain('Full balance list unavailable.')
+    expect(message).not.toContain('Current balances:')
+  })
+
+  test.each(['blocked', 'closed'] as const)(
+    'keeps an accessible WhatsApp fallback when the handoff window is %s',
+    async (kind) => {
+      drinkCall.mockResolvedValue(successfulDrink)
+      const handoff = { ...handoffWindow(), closed: true }
+      vi.spyOn(window, 'open').mockReturnValue(
+        kind === 'blocked' ? null : (handoff as unknown as Window),
+      )
+      await act(async () => void (await store.loadMe()))
+      const user = userEvent.setup()
+      mount()
+
+      await user.click(screen.getByRole('button', { name: 'Drink' }))
+
+      const fallback = await screen.findByRole('link', { name: 'Open WhatsApp' })
+      expect(fallback).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/\?text=/))
+      const message = decodeURIComponent(fallback.getAttribute('href')!.split('=')[1]!)
+      expect(message).toContain('Dewa drank 1 cup')
+      expect(drinkCall).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  test('does not share a Drink that was put back before balances arrive', async () => {
+    drinkCall.mockResolvedValue(successfulDrink)
+    undoCall.mockResolvedValue({ remainingTotal: 5 })
+    let releaseBalances: (value: unknown) => void = () => {}
+    balancesCall.mockImplementation(() => new Promise((resolve) => (releaseBalances = resolve)))
+    const handoff = handoffWindow()
+    vi.spyOn(window, 'open').mockReturnValue(handoff as unknown as Window)
+    await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
+    mount()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    await user.click(await screen.findByRole('button', { name: 'Put it back' }))
+    await waitFor(() => expect(undoCall).toHaveBeenCalledTimes(1))
+    await act(async () =>
+      releaseBalances({ balances: [{ memberId: 'M1', displayName: 'Dewa', remaining: 4 }] }),
+    )
+
+    await waitFor(() => expect(handoff.close).toHaveBeenCalledTimes(1))
+    expect(handoff.location.href).toBe('about:blank')
+    expect(screen.queryByRole('link', { name: 'Open WhatsApp' })).toBeNull()
   })
 
   test('closes the handoff window and does not fetch balances when Drink fails', async () => {
@@ -197,6 +244,21 @@ describe('the Drink action', () => {
     mount()
     await user.click(screen.getByRole('button', { name: 'Drink' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('No cups left on any card.')
+  })
+
+  test('retrying a background balance error refreshes instead of drinking', async () => {
+    await act(async () => void (await store.loadMe()))
+    me.mockRejectedValueOnce(new Error('refresh failed'))
+    await act(async () => void (await store.loadMe()))
+    me.mockResolvedValue(balance(5))
+    const user = userEvent.setup()
+    mount()
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(3))
+    expect(drinkCall).not.toHaveBeenCalled()
+    expect(window.open).not.toHaveBeenCalled()
   })
 })
 

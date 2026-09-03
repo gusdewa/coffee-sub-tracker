@@ -52,11 +52,13 @@ export function App() {
       if (document.visibilityState === 'visible') void loadMe()
     }
     const refreshWhenOnline = () => void loadMe()
+    const poll = window.setInterval(refreshWhenVisible, 60_000)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     window.addEventListener('online', refreshWhenOnline)
     return () => {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
       window.removeEventListener('online', refreshWhenOnline)
+      window.clearInterval(poll)
     }
   }, [signedIn])
 

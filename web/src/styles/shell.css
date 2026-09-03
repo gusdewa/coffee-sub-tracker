@@ -319,6 +319,21 @@
   white-space: nowrap;
 }
 
+.whatsapp-fallback {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--gap-m);
+  background: var(--paper);
+  border: 1px solid var(--action);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lift);
+  color: var(--action);
+  font-size: var(--step--1);
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .snackbar {
   z-index: var(--z-snackbar);
   display: flex;

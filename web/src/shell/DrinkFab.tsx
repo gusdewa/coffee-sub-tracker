@@ -1,8 +1,13 @@
-import { useCoffee, drink } from '../state/coffee'
+import { useState } from 'react'
+import { useCoffee, drink, loadMe, wasDrinkUndone } from '../state/coffee'
 import { api } from '../api/client'
 import { CoffeeCupIcon } from '../components/icons'
 import { ErrorState } from '../components/ErrorState'
-import { formatCoffeeRecap, navigateWhatsAppHandoff } from '../sharing/whatsapp'
+import {
+  formatCoffeeRecap,
+  navigateWhatsAppHandoff,
+  whatsAppShareUrl,
+} from '../sharing/whatsapp'
 
 /**
  * One tap, from anywhere.
@@ -16,6 +21,7 @@ import { formatCoffeeRecap, navigateWhatsAppHandoff } from '../sharing/whatsapp'
  */
 export function DrinkFab() {
   const { data, busy, offline, error } = useCoffee()
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
 
   const loading = data === null
   const empty = data !== null && data.totalRemaining === 0
@@ -34,6 +40,7 @@ export function DrinkFab() {
         : null
 
   const handleDrink = async () => {
+    setShareUrl(null)
     // Open synchronously while this handler still has the trusted click. wa.me
     // cannot target Cart Coffee (temp); it will ask the member to choose a chat.
     const handoff = window.open('about:blank', 'coffee-whatsapp-share')
@@ -43,14 +50,16 @@ export function DrinkFab() {
       handoff?.close()
       return
     }
-    if (!handoff || !data) return
+    if (!data) return
 
     let balances
+    let balanceState: 'complete' | 'partial' = 'complete'
     try {
       balances = (await api.balances()).balances
     } catch {
       // Consumption already succeeded. Fall back to the only current balance
-      // we can state truthfully instead of turning success into an app error.
+      // we can state truthfully, and explicitly disclose that the list is partial.
+      balanceState = 'partial'
       balances = [
         {
           memberId: data.member.memberId,
@@ -59,19 +68,33 @@ export function DrinkFab() {
         },
       ]
     }
-    navigateWhatsAppHandoff(
-      handoff,
-      formatCoffeeRecap({
-        memberName: data.member.displayName,
-        batchLabel: result.batchLabel,
-        balances,
-      }),
-    )
+
+    // Undo and the recap request run independently. Never hand off a message
+    // about a cup that was successfully put back while balances were loading.
+    if (wasDrinkUndone(result.opId)) {
+      handoff?.close()
+      return
+    }
+
+    const message = formatCoffeeRecap({
+      memberName: data.member.displayName,
+      batchLabel: result.batchLabel,
+      balances,
+      balanceState,
+    })
+    if (!navigateWhatsAppHandoff(handoff, message)) {
+      setShareUrl(whatsAppShareUrl(message))
+    }
   }
 
   return (
     <>
-      {error && <ErrorState error={error} onRetry={() => void handleDrink()} inline />}
+      {error && <ErrorState error={error} onRetry={() => void loadMe()} inline />}
+      {shareUrl && (
+        <a className="whatsapp-fallback" href={shareUrl} target="_blank" rel="noreferrer">
+          Open WhatsApp
+        </a>
+      )}
       <button
         type="button"
         className="fab"

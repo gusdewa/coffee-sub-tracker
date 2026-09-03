@@ -61,6 +61,26 @@ describe('the coffee store', () => {
     expect(store.getCoffeeState().data?.totalRemaining).toBe(5)
   })
 
+  test('a pre-mutation refresh cannot overwrite Drink or absorb its authoritative refresh', async () => {
+    await store.loadMe()
+    let releaseStale: (value: ReturnType<typeof balance>) => void = () => {}
+    let releaseFresh: (value: ReturnType<typeof balance>) => void = () => {}
+    me
+      .mockImplementationOnce(() => new Promise((resolve) => (releaseStale = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (releaseFresh = resolve)))
+    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+
+    const staleRefresh = store.loadMe()
+    await store.drink()
+
+    expect(me).toHaveBeenCalledTimes(3)
+    releaseFresh(balance(4))
+    await vi.waitFor(() => expect(store.getCoffeeState().data?.totalRemaining).toBe(4))
+    releaseStale(balance(0))
+    await staleRefresh
+    expect(store.getCoffeeState().data?.totalRemaining).toBe(4)
+  })
+
   test('a drink taken anywhere leaves an undo the whole app can see', async () => {
     drinkCall.mockResolvedValue({
       opId: 'op1',
