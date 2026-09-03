@@ -45,6 +45,21 @@ export function App() {
     void loadMe()
   }, [uid, qaActive])
 
+  useEffect(() => {
+    if (!signedIn) return
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadMe()
+    }
+    const refreshWhenOnline = () => void loadMe()
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('online', refreshWhenOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('online', refreshWhenOnline)
+    }
+  }, [signedIn])
+
   // Only once the balance is in: the tour points at the shell, and the shell is
   // not on screen until there is something to show in it.
   const replayTour = useOnboarding(signedIn && !unbound && data !== null)

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { api, type MeResponse } from '../api/client'
+import { api, type DrinkResponse, type MeResponse } from '../api/client'
 import { isOffline, subscribeOnline } from './online'
 
 /**
@@ -57,6 +57,7 @@ const initial = (): CoffeeState => ({
 let state: CoffeeState = initial()
 const listeners = new Set<() => void>()
 let undoTimer: ReturnType<typeof setTimeout> | undefined
+let loadMeRequest: Promise<void> | null = null
 
 function set(patch: Partial<CoffeeState>): void {
   state = { ...state, ...patch }
@@ -101,20 +102,30 @@ export function useCoffeeRevision(): number {
   return useSyncExternalStore(subscribeCoffee, getRevision, getRevision)
 }
 
-/** Load the balance. The rejection is kept: App reads it to detect an unbound account. */
-export async function loadMe(): Promise<void> {
-  try {
-    const data = await api.me()
-    set({ data, error: null })
-  } catch (err) {
-    set({ error: err as Error })
-  }
+/** Load the balance, sharing an authoritative request with overlapping callers. */
+export function loadMe(): Promise<void> {
+  if (loadMeRequest) return loadMeRequest
+
+  loadMeRequest = (async () => {
+    try {
+      const data = await api.me()
+      set({ data, error: null })
+    } catch (err) {
+      // The rejection is kept: App reads it to detect an unbound account.
+      set({ error: err as Error })
+    }
+  })()
+  const currentRequest = loadMeRequest
+  void currentRequest.finally(() => {
+    if (loadMeRequest === currentRequest) loadMeRequest = null
+  })
+  return currentRequest
 }
 
-export async function drink(): Promise<void> {
-  if (state.busy) return
-  if (state.offline) return
-  if (!state.data || state.data.totalRemaining === 0) return
+export async function drink(): Promise<DrinkResponse | null> {
+  if (state.busy) return null
+  if (state.offline) return null
+  if (!state.data || state.data.totalRemaining === 0) return null
 
   set({ busy: true, error: null })
   // One key per intent, so a retry of this press reuses it and the server
@@ -134,8 +145,10 @@ export async function drink(): Promise<void> {
     })
     undoTimer = setTimeout(() => set({ undo: null }), UNDO_SECONDS * 1000)
     void loadMe()
+    return result
   } catch (err) {
     set({ error: err as Error })
+    return null
   } finally {
     set({ busy: false })
   }
@@ -172,5 +185,6 @@ export function dismissCoffeeError(): void {
 export function resetCoffeeStore(): void {
   clearUndoTimer()
   listeners.clear()
+  loadMeRequest = null
   state = initial()
 }

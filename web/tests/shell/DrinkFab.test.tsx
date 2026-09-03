@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 const me = vi.fn()
 const drinkCall = vi.fn()
 const undoCall = vi.fn()
+const balancesCall = vi.fn()
 
 vi.mock('../../src/api/client', async () => {
   const actual =
@@ -15,6 +16,7 @@ vi.mock('../../src/api/client', async () => {
       me: (...a: unknown[]) => me(...a),
       drink: (...a: unknown[]) => drinkCall(...a),
       undo: (...a: unknown[]) => undoCall(...a),
+      balances: (...a: unknown[]) => balancesCall(...a),
     },
   }
 })
@@ -40,12 +42,96 @@ const mount = () =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.spyOn(window, 'open').mockReturnValue(null)
   store.resetCoffeeStore()
   me.mockResolvedValue(balance(5))
+  balancesCall.mockResolvedValue({
+    balances: [
+      { memberId: 'M1', displayName: 'Dewa', remaining: 4 },
+      { memberId: 'M2', displayName: 'Ayu', remaining: 2 },
+    ],
+  })
 })
 afterEach(() => vi.useRealTimers())
 
 describe('the Drink action', () => {
+  const successfulDrink = {
+    opId: 'op1',
+    batchLabel: 'September beans',
+    remainingTotal: 4,
+  }
+
+  const handoffWindow = () => ({ location: { href: 'about:blank' }, close: vi.fn() })
+
+  test('pre-opens one named handoff window synchronously with the trusted click', async () => {
+    let release: (value: typeof successfulDrink) => void = () => {}
+    drinkCall.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    const handoff = handoffWindow()
+    const open = vi.spyOn(window, 'open').mockReturnValue(handoff as unknown as Window)
+    await act(async () => void (await store.loadMe()))
+    mount()
+
+    act(() => screen.getByRole('button', { name: 'Drink' }).click())
+
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledWith('about:blank', 'coffee-whatsapp-share')
+    expect(handoff.location.href).toBe('about:blank')
+    await act(async () => release(successfulDrink))
+    await waitFor(() => expect(balancesCall).toHaveBeenCalledTimes(1))
+  })
+
+  test('navigates the pre-opened window to a recap with all current balances', async () => {
+    drinkCall.mockResolvedValue(successfulDrink)
+    const handoff = handoffWindow()
+    vi.spyOn(window, 'open').mockReturnValue(handoff as unknown as Window)
+    await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
+    mount()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+
+    await waitFor(() => expect(handoff.location.href).toMatch(/^https:\/\/wa\.me\/\?text=/))
+    const message = decodeURIComponent(handoff.location.href.split('=')[1]!)
+    expect(message).toContain('Dewa drank 1 cup')
+    expect(message).toContain('September beans')
+    expect(message).toContain('Dewa: 4 cups')
+    expect(message).toContain('Ayu: 2 cups')
+  })
+
+  test('uses the Drink response for a truthful self-only recap when balances fail', async () => {
+    drinkCall.mockResolvedValue(successfulDrink)
+    balancesCall.mockRejectedValue(new Error('balances unavailable'))
+    const handoff = handoffWindow()
+    vi.spyOn(window, 'open').mockReturnValue(handoff as unknown as Window)
+    await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
+    mount()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+
+    await waitFor(() => expect(handoff.location.href).toMatch(/^https:\/\/wa\.me\/\?text=/))
+    const message = decodeURIComponent(handoff.location.href.split('=')[1]!)
+    expect(message).toContain('Dewa drank 1 cup')
+    expect(message).toContain('September beans')
+    expect(message).toContain('Dewa: 4 cups')
+    expect(message).not.toContain('Ayu')
+  })
+
+  test('closes the handoff window and does not fetch balances when Drink fails', async () => {
+    drinkCall.mockRejectedValue(new ApiError('NO_BALANCE', 'none', 409))
+    const handoff = handoffWindow()
+    vi.spyOn(window, 'open').mockReturnValue(handoff as unknown as Window)
+    await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
+    mount()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+
+    await waitFor(() => expect(handoff.close).toHaveBeenCalledTimes(1))
+    expect(balancesCall).not.toHaveBeenCalled()
+    expect(handoff.location.href).toBe('about:blank')
+  })
+
   test('always shows its label — never an icon on its own', async () => {
     await act(async () => void (await store.loadMe()))
     mount()

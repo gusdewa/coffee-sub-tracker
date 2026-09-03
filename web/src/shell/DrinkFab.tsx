@@ -1,6 +1,8 @@
 import { useCoffee, drink } from '../state/coffee'
+import { api } from '../api/client'
 import { CoffeeCupIcon } from '../components/icons'
 import { ErrorState } from '../components/ErrorState'
+import { formatCoffeeRecap, navigateWhatsAppHandoff } from '../sharing/whatsapp'
 
 /**
  * One tap, from anywhere.
@@ -31,14 +33,50 @@ export function DrinkFab() {
         ? 'You have no cups remaining.'
         : null
 
+  const handleDrink = async () => {
+    // Open synchronously while this handler still has the trusted click. wa.me
+    // cannot target Cart Coffee (temp); it will ask the member to choose a chat.
+    const handoff = window.open('about:blank', 'coffee-whatsapp-share')
+    if (handoff) handoff.opener = null
+    const result = await drink()
+    if (!result) {
+      handoff?.close()
+      return
+    }
+    if (!handoff || !data) return
+
+    let balances
+    try {
+      balances = (await api.balances()).balances
+    } catch {
+      // Consumption already succeeded. Fall back to the only current balance
+      // we can state truthfully instead of turning success into an app error.
+      balances = [
+        {
+          memberId: data.member.memberId,
+          displayName: data.member.displayName,
+          remaining: result.remainingTotal,
+        },
+      ]
+    }
+    navigateWhatsAppHandoff(
+      handoff,
+      formatCoffeeRecap({
+        memberName: data.member.displayName,
+        batchLabel: result.batchLabel,
+        balances,
+      }),
+    )
+  }
+
   return (
     <>
-      {error && <ErrorState error={error} onRetry={() => void drink()} inline />}
+      {error && <ErrorState error={error} onRetry={() => void handleDrink()} inline />}
       <button
         type="button"
         className="fab"
         data-tour="drink"
-        onClick={() => void drink()}
+        onClick={() => void handleDrink()}
         disabled={busy || loading || empty || offline}
         aria-busy={busy}
         aria-describedby={help ? 'fab-help' : undefined}

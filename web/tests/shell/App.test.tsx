@@ -63,6 +63,7 @@ const at = (path = '/') =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.spyOn(window, 'open').mockReturnValue(null)
   store.resetCoffeeStore()
   localStorage.clear()
   // Finished, so the walkthrough does not open over these assertions.
@@ -72,6 +73,25 @@ beforeEach(() => {
 })
 
 describe('the signed-in shell', () => {
+  test.each([
+    ['becomes visible', () => document.dispatchEvent(new Event('visibilitychange'))],
+    ['comes online', () => window.dispatchEvent(new Event('online'))],
+  ])('refreshes a stale zero balance when the app %s', async (_label, resume) => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    me.mockResolvedValue(member('member', 0))
+    const view = at()
+    const fab = await screen.findByRole('button', { name: 'Drink' })
+    expect(fab).toBeDisabled()
+
+    me.mockResolvedValue(member('member', 3))
+    resume()
+
+    await waitFor(() => expect(fab).toBeEnabled())
+    expect(me).toHaveBeenCalledTimes(2)
+    view.unmount()
+    visibility.mockRestore()
+  })
+
   test('a member and an admin see the same four destinations', async () => {
     at()
     const nav = await screen.findByRole('navigation', { name: /sections/i })

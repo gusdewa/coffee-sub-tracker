@@ -48,6 +48,19 @@ afterEach(() => {
 })
 
 describe('the coffee store', () => {
+  test('simultaneous balance refreshes share one authoritative request', async () => {
+    let release: (value: ReturnType<typeof balance>) => void = () => {}
+    me.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+
+    const first = store.loadMe()
+    const second = store.loadMe()
+
+    expect(me).toHaveBeenCalledTimes(1)
+    release(balance(5))
+    await Promise.all([first, second])
+    expect(store.getCoffeeState().data?.totalRemaining).toBe(5)
+  })
+
   test('a drink taken anywhere leaves an undo the whole app can see', async () => {
     drinkCall.mockResolvedValue({
       opId: 'op1',
