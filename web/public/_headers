@@ -1,0 +1,41 @@
+# Cloudflare Pages headers. GitHub Pages ignores this file, so it is safe to
+# ship from both hosts.
+#
+# The rule that matters for a PWA: everything hashed may be cached forever,
+# and everything that decides *which* hashes to use may not. A cached sw.js or
+# index.html strands people on an old build with no way to be offered a new one
+# — which is the exact failure the update lifecycle exists to prevent.
+#
+# No Content-Security-Policy here on purpose. Firebase sign-in opens a popup to
+# the auth domain, and a CSP added without exercising that flow would break the
+# only way into the app. tests/pwa/workbox-config.test.ts already forbids a CSP
+# <meta> for the same reason.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+  Cross-Origin-Resource-Policy: same-origin
+
+# Hashed by the bundler; the name changes whenever the bytes do.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/workbox-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# Revalidated every time: these are what point at the hashed files.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+# The recovery page must always come from the network, not from the worker or
+# an intermediary cache — it is what people load when the worker is the problem.
+/unregister.html
+  Cache-Control: no-store

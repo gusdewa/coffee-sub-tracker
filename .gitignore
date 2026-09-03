@@ -26,3 +26,4 @@ __azurite__/
 .e2e/
 web/playwright-report/
 web/test-results/
+web/.build-test/

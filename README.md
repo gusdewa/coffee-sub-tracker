@@ -88,7 +88,7 @@ can never silently downgrade to key-based auth.
 | `FIREBASE_PROJECT_ID` | token issuer/audience — `coffee-sub-tracker-f4551d` |
 | `ALLOWED_EMAIL_DOMAIN` | identity domain — `gmail.com` (members sign in with a personal Google account) |
 | `STORAGE_ACCOUNT_NAME` | `smartinnovdigitalassets` |
-| `ALLOWED_ORIGIN` | `https://gusdewa.github.io` |
+| `ALLOWED_ORIGINS` | `https://gusdewa.github.io,https://coffee-sub.pages.dev` |
 | `UNDO_WINDOW_SECONDS` | default 90 |
 
 Storage uses `DefaultAzureCredential` (the App Service managed identity), and

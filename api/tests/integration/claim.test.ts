@@ -61,7 +61,7 @@ beforeAll(async () => {
   }
 
   app = createApp({
-    config: { ...loadConfig(), rosterCacheTtlMs: 0, allowedEmailDomain: DOMAIN, allowedOrigin: ORIGIN },
+    config: { ...loadConfig(), rosterCacheTtlMs: 0, allowedEmailDomain: DOMAIN, allowedOrigins: [ORIGIN] },
     members,
     ledger: createTableClient(TABLES.ledger),
     batches: createTableClient(TABLES.batches),

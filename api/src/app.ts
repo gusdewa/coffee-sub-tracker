@@ -73,7 +73,7 @@ export function createApp(deps: AppDeps = {}) {
   app.set('trust proxy', true)
   app.disable('x-powered-by')
   app.use(express.json({ limit: '16kb' }))
-  app.use(cors(config.allowedOrigin))
+  app.use(cors(config.allowedOrigins))
 
   const asyncRoute =
     (fn: (req: Request, res: Response) => Promise<void>) =>

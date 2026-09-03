@@ -40,4 +40,43 @@ describe('web deploy pipeline', () => {
     expect(webTests).toBeGreaterThan(-1)
     expect(build).toBeLessThan(webTests)
   })
+
+  test('the Cloudflare deploy is gated the same way', () => {
+    const cf = workflow('deploy-cloudflare.yml')
+    expect(cf).toMatch(/^ {2}test:$/m)
+    expect(cf).toMatch(/^ {2}deploy:\n(?: {4}.*\n)*? {4}needs: test$/m)
+    expect(cf).toContain('npm test -w @coffee-sub/web')
+    expect(cf).toContain('npm run test:e2e -w @coffee-sub/web')
+  })
+
+  test('Cloudflare is manual until the migration is verified', () => {
+    const cf = workflow('deploy-cloudflare.yml')
+    // Two hosts racing to be production is worse than one stale host.
+    expect(cf).toContain('workflow_dispatch')
+    expect(cf).not.toMatch(/^on:\n(?:.*\n)*? {2}push:/m)
+  })
+
+  test('each host builds with its own base, and says which', () => {
+    expect(workflow('deploy-web.yml')).toContain('VITE_BASE_PATH: /coffee-sub-tracker/')
+    expect(workflow('deploy-cloudflare.yml')).toContain('VITE_BASE_PATH: /')
+  })
+
+  test('Cloudflare credentials come from secrets and are never echoed', () => {
+    const cf = workflow('deploy-cloudflare.yml')
+    expect(cf).toContain('secrets.CLOUDFLARE_API_TOKEN')
+    expect(cf).toContain('secrets.CLOUDFLARE_ACCOUNT_ID')
+    // No `echo $TOKEN`, no token in a URL.
+    expect(cf).not.toMatch(/echo[^\n]*CLOUDFLARE_API_TOKEN/)
+    expect(cf).not.toMatch(/CLOUDFLARE_API_TOKEN[^\n]*curl/)
+  })
+
+  test('the upload is verified as a root build before it is published', () => {
+    const cf = workflow('deploy-cloudflare.yml')
+    const verify = cf.indexOf('Verify the artifact is a root build')
+    const publish = cf.indexOf('wrangler-action')
+    expect(verify).toBeGreaterThan(-1)
+    expect(publish).toBeGreaterThan(-1)
+    expect(verify).toBeLessThan(publish)
+  })
 })
+

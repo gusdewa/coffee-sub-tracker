@@ -146,3 +146,52 @@ az webapp log deployment show -n simo-digitalassets-svc-coffee-sub \
 
 A 200 from `/api/health` is not sufficient on its own — that is exactly what the
 unreviewed local build produced.
+
+## Hosting the frontend: GitHub Pages and Cloudflare Pages
+
+The frontend is host-neutral. `VITE_BASE_PATH` decides where a build expects to
+be served from, and everything else follows it: Vite's `base`, the manifest's
+`id`, `start_url`, `scope` and icon URLs, the service worker's scope and
+navigation fallback, and the recovery route. It is validated at build time —
+an absolute URL, a traversal segment or a stray query string fails the build
+rather than producing a worker whose scope silently does not match the site.
+
+| Host | `VITE_BASE_PATH` | Workflow | Trigger |
+|---|---|---|---|
+| GitHub Pages (canonical today) | `/coffee-sub-tracker/` | `deploy-web.yml` | push to `main` |
+| Cloudflare Pages `coffee-sub` | `/` | `deploy-cloudflare.yml` | manual only |
+
+Both workflows gate on the same suite before anything is published, and
+`tests/build/artifacts.test.ts` builds *both* bases and asserts the resulting
+artifacts, so a change that only works at one base fails in CI rather than on a
+phone.
+
+Cloudflare is `workflow_dispatch` only, deliberately. Two hosts racing to be
+production is worse than one stale host, so Pages stays canonical until the new
+origin has been verified end to end.
+
+### Order of operations for the Cloudflare cutover
+
+The API's CORS allowlist is the part that is easy to get out of order.
+
+1. **Redeploy the API config first.** `ALLOWED_ORIGINS` must list both origins
+   (`https://gusdewa.github.io,https://coffee-sub.pages.dev`) before the
+   Cloudflare site is useful. The API still reads the older singular
+   `ALLOWED_ORIGIN` as a fallback, so a deployment that has not been updated
+   keeps working — but it will only permit the Pages origin, and every request
+   from `coffee-sub.pages.dev` will fail CORS until `deploy-infra.yml` runs.
+2. Confirm `coffee-sub.pages.dev` is in the Firebase authorized domains, with
+   `gusdewa.github.io` retained. Removing the old one breaks sign-in on the
+   host that is still canonical.
+3. Run `deploy-cloudflare.yml`. It verifies the artifact is a root build before
+   uploading, then smoke-checks `/`, `/sw.js` and `/manifest.webmanifest` and
+   asserts `sw.js` is not served immutable.
+4. Verify on the new origin: Google sign-in, the update prompt appearing and
+   applying, and an API call succeeding. Only then consider whether GitHub
+   Pages is retired.
+
+Never use a wildcard CORS origin. Requests carry Firebase bearer tokens, so
+`Access-Control-Allow-Origin: *` would make every balance readable by any site
+a signed-in colleague happens to visit. `api/tests/unit/cors.test.ts` refuses
+one outright, along with lookalike suffixes, Cloudflare preview subdomains and
+the `null` origin.

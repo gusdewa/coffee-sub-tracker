@@ -36,6 +36,10 @@ test.beforeAll(async () => {
         ...process.env,
         GITHUB_SHA: 'shell000',
         VITEST: '',
+      // The e2e server serves the GitHub Pages subpath, which is what
+      // production is today. Root-base artifacts are covered in
+      // tests/build/artifacts.test.ts.
+      VITE_BASE_PATH: '/coffee-sub-tracker/',
         VITE_FIREBASE_API_KEY: 'AIzaSyTestOnlyNotARealKey0000000000000000',
         VITE_FIREBASE_AUTH_DOMAIN: 'e2e.firebaseapp.com',
         VITE_FIREBASE_PROJECT_ID: 'e2e-project',

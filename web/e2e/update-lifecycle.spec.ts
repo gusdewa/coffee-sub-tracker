@@ -37,6 +37,10 @@ function build(into: string, buildId: string): void {
       ...process.env,
       GITHUB_SHA: buildId,
       VITEST: '',
+      // The e2e server serves the GitHub Pages subpath, which is what
+      // production is today. Root-base artifacts are covered in
+      // tests/build/artifacts.test.ts.
+      VITE_BASE_PATH: '/coffee-sub-tracker/',
       // Syntactically valid but non-functional config. Without it
       // initializeApp throws and the app never leaves its loading state, so
       // the test would be asserting against a screen no real user sees. These

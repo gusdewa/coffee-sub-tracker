@@ -16,6 +16,8 @@ process.env.AZURE_TABLES_CONNECTION_STRING ??= azuriteConnectionString()
 
 const DOMAIN = 'gmail.com'
 const ORIGIN = 'https://gusdewa.github.io'
+// The migration target. Both are live for the duration.
+const CLOUDFLARE_ORIGIN = 'https://coffee-sub.pages.dev'
 
 let ledger: TableClient
 let members: TableClient
@@ -90,7 +92,7 @@ beforeAll(async () => {
     ],
   })
 
-  const config = { ...loadConfig(), rosterCacheTtlMs: 0, allowedEmailDomain: DOMAIN, allowedOrigin: ORIGIN }
+  const config = { ...loadConfig(), rosterCacheTtlMs: 0, allowedEmailDomain: DOMAIN, allowedOrigins: [ORIGIN, CLOUDFLARE_ORIGIN] }
   app = createApp({ config, ledger, members, batches, qaSessions, verifier: stubVerifier })
 })
 
@@ -181,7 +183,7 @@ describe('idempotency and balance semantics over HTTP', () => {
     const verifier = async (t: string) =>
       t === 'dry' ? mk(dry, `dry@${DOMAIN}`) : stubVerifier(t)
     const dryApp = createApp({
-      config: { ...loadConfig(), rosterCacheTtlMs: 0, allowedEmailDomain: DOMAIN, allowedOrigin: ORIGIN },
+      config: { ...loadConfig(), rosterCacheTtlMs: 0, allowedEmailDomain: DOMAIN, allowedOrigins: [ORIGIN, CLOUDFLARE_ORIGIN] },
       ledger, members, batches, qaSessions, verifier,
     })
 
@@ -239,20 +241,31 @@ describe('admin gate and QA scope over HTTP', () => {
   })
 })
 
-describe('CORS is pinned to the Pages origin', () => {
-  test('the allowed origin receives CORS headers', async () => {
-    const res = await request(app).get('/api/health').set('Origin', ORIGIN).expect(200)
-    expect(res.headers['access-control-allow-origin']).toBe(ORIGIN)
+describe('CORS is pinned to the two migration origins', () => {
+  test.each([
+    ['the Pages origin', ORIGIN],
+    ['the Cloudflare origin', CLOUDFLARE_ORIGIN],
+  ])('%s receives CORS headers, reflected exactly', async (_label, origin) => {
+    const res = await request(app).get('/api/health').set('Origin', origin).expect(200)
+    expect(res.headers['access-control-allow-origin']).toBe(origin)
+    expect(res.headers['vary']).toBe('Origin')
+    // Bearer auth, never cookies.
     expect(res.headers['access-control-allow-credentials']).toBeUndefined()
   })
 
-  test('another origin receives none, and its preflight is refused', async () => {
-    const res = await request(app).get('/api/health').set('Origin', 'https://evil.example').expect(200)
+  test.each([
+    ['an unrelated site', 'https://evil.example'],
+    ['a lookalike suffix', 'https://gusdewa.github.io.evil.example'],
+    ['a Cloudflare preview subdomain', 'https://preview.coffee-sub.pages.dev'],
+    ['the null origin', 'null'],
+  ])('%s receives none, and its preflight is refused', async (_label, origin) => {
+    const res = await request(app).get('/api/health').set('Origin', origin).expect(200)
     expect(res.headers['access-control-allow-origin']).toBeUndefined()
-    await request(app).options('/api/me').set('Origin', 'https://evil.example').expect(403)
+    await request(app).options('/api/me').set('Origin', origin).expect(403)
   })
 
-  test('a valid preflight is answered 204', async () => {
+  test('a valid preflight is answered 204 from either origin', async () => {
     await request(app).options('/api/me/drinks').set('Origin', ORIGIN).expect(204)
+    await request(app).options('/api/me/drinks').set('Origin', CLOUDFLARE_ORIGIN).expect(204)
   })
 })

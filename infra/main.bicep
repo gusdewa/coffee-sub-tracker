@@ -25,7 +25,8 @@ param keyVaultName string = 'kv-simo-coffeesub-dev'
 param location string = resourceGroup().location
 param firebaseProjectId string = 'coffee-sub-tracker-f4551d'
 param allowedEmailDomain string = 'gmail.com'
-param allowedOrigin string = 'https://gusdewa.github.io'
+@description('Comma-separated exact origins permitted by CORS. Both hosts stay listed for the duration of the Cloudflare migration; bearer auth makes a wildcard unsafe.')
+param allowedOrigins string = 'https://gusdewa.github.io,https://coffee-sub.pages.dev'
 param undoWindowSeconds int = 90
 
 @description('Object id of the GitHub Actions deployment principal, granted Website Contributor.')
@@ -116,7 +117,7 @@ resource api 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'FIREBASE_PROJECT_ID', value: firebaseProjectId }
         { name: 'ALLOWED_EMAIL_DOMAIN', value: allowedEmailDomain }
         { name: 'STORAGE_ACCOUNT_NAME', value: storageAccountName }
-        { name: 'ALLOWED_ORIGIN', value: allowedOrigin }
+        { name: 'ALLOWED_ORIGINS', value: allowedOrigins }
         { name: 'UNDO_WINDOW_SECONDS', value: string(undoWindowSeconds) }
         { name: 'ROSTER_CACHE_TTL_MS', value: '60000' }
         { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }

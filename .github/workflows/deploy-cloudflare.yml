@@ -1,0 +1,140 @@
+name: Deploy web to Cloudflare Pages
+
+# Manual only, deliberately.
+#
+# GitHub Pages remains canonical until the Cloudflare host has been verified
+# end to end: Google sign-in against the new origin, the service-worker update
+# lifecycle, and API CORS from coffee-sub.pages.dev. Adding a push trigger
+# before then would make two hosts race to be production.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Cloudflare Pages branch to deploy to (main = production)'
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: false
+
+jobs:
+  # The same gate as the Pages deploy. A host migration is the worst moment to
+  # discover the suite was never run.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -b web/tsconfig.json --noEmit
+
+      # Before the unit tests: generated-sw.test.ts reads dist/sw.js and skips
+      # when it is absent. Built at the root base, which is what ships here.
+      - name: Build web
+        env:
+          VITE_BASE_PATH: /
+        run: npm run build -w @coffee-sub/web
+
+      - name: Web tests
+        env:
+          VITE_BASE_PATH: /
+        run: npm test -w @coffee-sub/web
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Update lifecycle e2e
+        run: npm run test:e2e -w @coffee-sub/web
+
+      - name: Upload e2e report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-cloudflare
+          path: web/playwright-report/
+          retention-days: 7
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      url: ${{ steps.publish.outputs.deployment-url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Root base: Cloudflare Pages serves this project at the domain root,
+      # unlike the GitHub Pages project site. Same source, different input.
+      - name: Build
+        env:
+          VITE_BASE_PATH: /
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_ALLOWED_EMAIL_DOMAIN: ${{ vars.VITE_ALLOWED_EMAIL_DOMAIN }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build -w @coffee-sub/web
+
+      # Fail before upload rather than after: a subpath leaking into a root
+      # build gives a blank page and a worker whose scope does not match.
+      - name: Verify the artifact is a root build
+        run: |
+          set -euo pipefail
+          if grep -q '/coffee-sub-tracker/' web/dist/index.html; then
+            echo "index.html still carries the GitHub Pages subpath"; exit 1
+          fi
+          node -e "
+            const m = require('./web/dist/manifest.webmanifest');
+            if (m.start_url !== '/' || m.scope !== '/') {
+              console.error('manifest is not root-scoped:', m.start_url, m.scope);
+              process.exit(1);
+            }
+          "
+          test -f web/dist/_headers || { echo "_headers missing"; exit 1; }
+          echo "root artifact verified"
+
+      # Direct upload: no Git integration on the Cloudflare side, matching the
+      # existing turkiye-2026-travel project. The token is a repository secret
+      # and is never echoed.
+      - name: Publish
+        id: publish
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy web/dist
+            --project-name coffee-sub
+            --branch ${{ inputs.branch || 'main' }}
+
+      - name: Smoke check the deployment
+        env:
+          URL: ${{ steps.publish.outputs.deployment-url }}
+        run: |
+          set -euo pipefail
+          echo "deployment: $URL"
+          for path in "" "sw.js" "manifest.webmanifest"; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 3 \
+              --retry-all-errors "$URL/$path")
+            echo "  /$path -> $code"
+            test "$code" = "200" || { echo "unexpected status for /$path"; exit 1; }
+          done
+          # The worker must be revalidated, or a new build can never be offered.
+          cache=$(curl -sSI "$URL/sw.js" | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')
+          echo "  sw.js cache-control: ${cache:-<none>}"
+          case "${cache:-}" in *immutable*) echo "sw.js must not be immutable"; exit 1 ;; esac

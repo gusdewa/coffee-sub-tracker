@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { resolveBasePath } from '../../basePath'
 
 /**
  * Icon and manifest assets.
@@ -13,6 +14,13 @@ import { resolve } from 'node:path'
 
 const ICONS = resolve(__dirname, '../../public/icons')
 const DIST = resolve(__dirname, '../../dist')
+
+/**
+ * The base this dist/ was actually built with. The same source ships to a
+ * GitHub Pages subpath and to the Cloudflare root, so the manifest's URLs are
+ * derived rather than asserted as a literal.
+ */
+const BASE = resolveBasePath(process.env.VITE_BASE_PATH)
 
 interface PngInfo {
   width: number
@@ -85,8 +93,9 @@ describe('built manifest', () => {
     }
     expect(manifest.icons.length).toBeGreaterThanOrEqual(3)
     for (const icon of manifest.icons) {
-      // src is base-absolute, e.g. /coffee-sub-tracker/icons/icon-192.png
-      const rel = icon.src.replace('/coffee-sub-tracker/', '')
+      // src is base-absolute, e.g. /coffee-sub-tracker/icons/icon-192.png or
+      // /icons/icon-192.png at the root — whichever base this build used.
+      const rel = icon.src.replace(BASE, '')
       expect(existsSync(resolve(DIST, rel)), `${icon.src} is advertised but absent`).toBe(true)
     }
   })
@@ -96,7 +105,7 @@ describe('built manifest', () => {
       start_url: string
       scope: string
     }
-    expect(manifest.start_url).toBe('/coffee-sub-tracker/')
-    expect(manifest.scope).toBe('/coffee-sub-tracker/')
+    expect(manifest.start_url).toBe(BASE)
+    expect(manifest.scope).toBe(BASE)
   })
 })

@@ -25,6 +25,7 @@ const TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
 }
 
+/** Default for the GitHub Pages project site; pass another to serve a root build. */
 export const BASE_PATH = '/coffee-sub-tracker/'
 
 export interface SwappableServer {
@@ -34,18 +35,22 @@ export interface SwappableServer {
   close: () => Promise<void>
 }
 
-export async function startServer(initialRoot: string, port = 0): Promise<SwappableServer> {
+export async function startServer(
+  initialRoot: string,
+  port = 0,
+  basePath: string = BASE_PATH,
+): Promise<SwappableServer> {
   let root = initialRoot
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     let pathname = decodeURIComponent(url.pathname)
 
-    if (!pathname.startsWith(BASE_PATH)) {
+    if (!pathname.startsWith(basePath)) {
       res.writeHead(404).end('outside base')
       return
     }
-    pathname = pathname.slice(BASE_PATH.length) || 'index.html'
+    pathname = pathname.slice(basePath.length) || 'index.html'
     // Refuse traversal outright rather than resolving it.
     const safe = normalize(pathname).replace(/^(\.\.[/\\])+/, '')
     const file = join(root, safe)
@@ -72,7 +77,7 @@ export async function startServer(initialRoot: string, port = 0): Promise<Swappa
   const boundPort = typeof address === 'object' && address ? address.port : port
 
   return {
-    url: `http://127.0.0.1:${boundPort}${BASE_PATH}`,
+    url: `http://127.0.0.1:${boundPort}${basePath}`,
     serve: (next: string) => {
       root = next
     },

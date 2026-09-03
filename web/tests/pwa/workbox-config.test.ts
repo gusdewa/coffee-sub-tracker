@@ -146,10 +146,10 @@ describe('recovery from a wedged worker', () => {
   test('the reset page is never served by the worker it removes', () => {
     const deny = options.workbox?.navigateFallbackDenylist ?? []
     expect(deny.length, 'unregister.html needs a navigateFallback denylist entry').toBeGreaterThan(0)
-    expect(deny.some((re) => re.test('/coffee-sub-tracker/unregister.html'))).toBe(true)
+    expect(deny.some((re) => re.test(`${BASE}unregister.html`))).toBe(true)
     // It must not swallow ordinary navigations.
-    expect(deny.some((re) => re.test('/coffee-sub-tracker/'))).toBe(false)
-    expect(deny.some((re) => re.test('/coffee-sub-tracker/index.html'))).toBe(false)
+    expect(deny.some((re) => re.test(BASE))).toBe(false)
+    expect(deny.some((re) => re.test(`${BASE}index.html`))).toBe(false)
   })
 })
 

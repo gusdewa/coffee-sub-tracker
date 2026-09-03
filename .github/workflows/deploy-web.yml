@@ -36,6 +36,8 @@ jobs:
       # Before the unit tests: `generated-sw.test.ts` reads dist/sw.js and skips
       # when it is absent, so building afterwards makes that guard vacuous.
       - name: Build web
+        env:
+          VITE_BASE_PATH: /coffee-sub-tracker/
         run: npm run build -w @coffee-sub/web
 
       - name: Web tests
@@ -71,6 +73,9 @@ jobs:
       # so it lives in repository *variables*, not secrets.
       - name: Build
         env:
+          # A GitHub Pages *project* site is served from a subpath. The
+          # Cloudflare workflow builds the same source with '/'.
+          VITE_BASE_PATH: /coffee-sub-tracker/
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}

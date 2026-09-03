@@ -2,11 +2,19 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { buildPwaOptions } from './pwa.config'
+import { resolveBasePath } from './basePath'
 
-// Project-site Pages deploy: assets are served from /coffee-sub-tracker/.
-// Routing is HashRouter, so every route lives in the fragment and the service
-// worker's navigation fallback is simply the app shell.
-const BASE = '/coffee-sub-tracker/'
+/*
+ * Where this build will be served from.
+ *
+ * `/coffee-sub-tracker/` for the GitHub Pages project site, `/` for Cloudflare
+ * Pages — declared by the deploying workflow rather than hard-coded here, and
+ * validated so a malformed value fails the build instead of producing a worker
+ * whose scope quietly does not match the site. Routing stays HashRouter, so
+ * every route lives in the fragment and the navigation fallback is just the
+ * app shell.
+ */
+const BASE = resolveBasePath(process.env.VITE_BASE_PATH)
 
 export default defineConfig(({ mode }) => {
   const apiBaseUrl =
