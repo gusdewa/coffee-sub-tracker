@@ -84,6 +84,8 @@
   --z-update: 60;
   --z-menu: 70;
   --z-tour: 80;
+  /* The spotlight mask, and the card that has to sit on top of it. */
+  --z-tour-card: 81;
   --z-dialog: 90;
 
   /* Published by UpdatePrompt while it is visible; see shell.css. */

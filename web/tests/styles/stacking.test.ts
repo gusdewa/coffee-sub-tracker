@@ -26,6 +26,7 @@ const LADDER = [
   '--z-update',
   '--z-menu',
   '--z-tour',
+  '--z-tour-card',
   '--z-dialog',
 ] as const
 

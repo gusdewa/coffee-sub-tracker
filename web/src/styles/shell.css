@@ -356,16 +356,21 @@
 /* --- onboarding tour ----------------------------------------------------- */
 
 /*
- * Driver.js ships z-index: 1000000000, which would sit outside the ladder
- * entirely. Pull it back onto --z-tour so the contract stays true, and dress
- * the popover as Coffee Sub rather than as Driver.js.
+ * Driver.js puts its popover at z-index 1000000000 and writes the overlay's
+ * z-index of 10000 as an inline style. Both sit outside the ladder, so both are
+ * pulled back onto it — and the overlay needs !important because a stylesheet
+ * cannot otherwise beat an inline style.
+ *
+ * The mask and the card take separate rungs. Overriding only the popover put it
+ * at 81 underneath an overlay still at 10000, which swallowed every click on the
+ * popover's own Next button.
  */
-.driver-popover.coffee-tour,
 .driver-overlay {
-  z-index: var(--z-tour);
+  z-index: var(--z-tour) !important;
 }
 
 .driver-popover.coffee-tour {
+  z-index: var(--z-tour-card);
   max-width: min(20rem, calc(100vw - 2 * var(--gap-m)));
   padding: var(--gap-m);
   background: var(--paper-raised);

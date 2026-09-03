@@ -110,9 +110,15 @@ at all.**
   covers the API origin, asserted against the *built* worker rather than the
   config, because a `urlPattern` closure serialises into the worker as an
   undefined identifier.
-- **Offline `Drink 1` is disabled on purpose.** Idempotency would stop a
+- **Offline `Drink` is disabled on purpose.** Idempotency would stop a
   duplicate, but not a tap made against a stale balance that lands minutes
-  later. A refusal beats a confidently wrong number.
+  later. A refusal beats a confidently wrong number. The button and the offline
+  banner read the same store, so they cannot disagree — for a while this was
+  documented here but never actually implemented, and the tap simply failed
+  after the fact.
+- **Drinking belongs to the shell, not to a screen.** The action and its
+  90-second undo live in `web/src/state/coffee.ts`, so a cup can be taken from
+  any route and navigating away no longer discards a live undo window.
 
 ## Still outstanding
 
