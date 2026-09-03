@@ -34,19 +34,28 @@ const base = {
 const HOLE = 'var(--punch-soft)'
 
 export function MineIcon({ active = false, size = 24 }: IconProps) {
+  const detail = active ? HOLE : 'currentColor'
   return (
     <svg {...base} width={size} height={size}>
+      {/*
+        A punch card: a squarer corner, a label line, and a row of holes along
+        the bottom. Three centred dots in a rounded box reads as a message
+        bubble instead — which is what the first draft looked like on a phone.
+      */}
       <rect
         x="2.9"
-        y="6.4"
+        y="6.2"
         width="18.2"
-        height="11.2"
-        rx="2.4"
+        height="11.6"
+        rx="1.7"
         fill={active ? 'currentColor' : 'none'}
       />
-      {[8, 12, 16].map((cx) => (
-        <circle key={cx} cx={cx} cy="12" r="1.15" fill={active ? HOLE : 'currentColor'} stroke="none" />
-      ))}
+      <path d="M6.2 9.9h5.6" stroke={detail} strokeWidth="1.6" />
+      <g fill={detail} stroke="none">
+        {[6.7, 10.2, 13.7, 17.2].map((cx) => (
+          <circle key={cx} cx={cx} cy="14.4" r="1.05" />
+        ))}
+      </g>
     </svg>
   )
 }

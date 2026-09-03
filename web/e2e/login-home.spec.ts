@@ -67,6 +67,15 @@ const noSidewaysScroll = async (page: Page) =>
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
   )
 
+/** Scroll the owner, not the document — that distinction is the point. */
+const scrollToEnd = async (page: Page) => {
+  await page.evaluate(() => {
+    const main = document.querySelector('.app__main')!
+    main.scrollTop = main.scrollHeight
+  })
+  await page.waitForTimeout(150)
+}
+
 /** True when the element's own centre is what a tap there would actually hit. */
 const isReachable = (page: Page, selector: string) =>
   page.evaluate((sel) => {
@@ -164,8 +173,12 @@ test.describe('home', () => {
     await shot(page, '34-home-slip', info.project.name)
   })
 
-  test('a short list needs no scrolling and still clears the action', async ({ page }) => {
+  test('a single card still clears the action at the end of the scroll', async ({ page }) => {
+    // "Short" is relative: one card plus the slip already overflows a 320x568
+    // screen, so this scrolls to the end like the long case and asserts the
+    // same property.
     await signedInShell(page, server.url, { batches: 1 })
+    await scrollToEnd(page)
     const card = (await page.locator('.card').last().boundingBox())!
     const fab = (await page.locator('.fab').boundingBox())!
     expect(card.y + card.height).toBeLessThanOrEqual(fab.y)
@@ -176,12 +189,7 @@ test.describe('home', () => {
   }, info) => {
     await signedInShell(page, server.url, { batches: 9 })
 
-    // Scroll the owner, not the document — that distinction is the point.
-    await page.evaluate(() => {
-      const main = document.querySelector('.app__main')!
-      main.scrollTop = main.scrollHeight
-    })
-    await page.waitForTimeout(150)
+    await scrollToEnd(page)
 
     const atEnd = await page.evaluate(() => {
       const main = document.querySelector('.app__main')!
@@ -234,6 +242,9 @@ test.describe('home', () => {
 
   test('has no accessibility violations', async ({ page }) => {
     await signedInShell(page, server.url, { batches: 3 })
+    // Wait for the action to settle out of its loading state first; measuring
+    // a control mid-change tells you about the change, not about the design.
+    await expect(page.locator('.fab')).toBeEnabled()
     expect(await violations(page)).toEqual([])
   })
 })

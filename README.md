@@ -1,9 +1,11 @@
 # coffee-sub-tracker
 
 Office coffee subscription balances, replacing a WhatsApp thread. Sign in with
-Google, see how many cups you have left, press **Drink 1**.
+Google, see how many cups you have left, tap **Drink**. It comes off your
+oldest card first, and you have 90 seconds to put it back.
 
-- **Frontend** — React + TypeScript + Vite on GitHub Pages
+- **Frontend** — React + TypeScript + Vite, host-neutral: a GitHub Pages
+  project site today, buildable for Cloudflare Pages at the root
 - **Identity** — Firebase Authentication (Google sign-in only); it supplies
   ID tokens and nothing else
 - **Data** — Azure Table Storage, account `smartinnovdigitalassets`

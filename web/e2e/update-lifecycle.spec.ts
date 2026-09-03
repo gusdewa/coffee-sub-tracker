@@ -126,7 +126,7 @@ test.describe('update lifecycle', () => {
 
     await page.goto(server.url)
     // Signed out: no Firebase config is supplied, so this is the sign-in screen.
-    await expect(page.getByRole('button', { name: /sign in with google/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /continue with google/i })).toBeVisible()
 
     const controlled = await becomeControlled(page, server.url)
     test.skip(
@@ -134,7 +134,7 @@ test.describe('update lifecycle', () => {
       `${browserName} did not activate a service worker in this environment`,
     )
     // Controlled now, and still signed out.
-    await expect(page.getByRole('button', { name: /sign in with google/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /continue with google/i })).toBeVisible()
 
     // Nothing to update yet.
     await expect(page.locator('.update')).toHaveCount(0)
@@ -154,7 +154,7 @@ test.describe('update lifecycle', () => {
     await expect(prompt).toBeVisible({ timeout: 30_000 })
     await expect(prompt).toContainText('A new version is ready')
     // Still on the sign-in screen — this is the whole point.
-    await expect(page.getByRole('button', { name: /sign in with google/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /continue with google/i })).toBeVisible()
     // Running the OLD build at this moment.
     await expect(prompt).toContainText(ID_A)
 
@@ -166,7 +166,7 @@ test.describe('update lifecycle', () => {
     // execution context. Locator assertions retry across navigation; a raw
     // page.evaluate does not.
     await page.waitForLoadState('load')
-    await expect(page.getByRole('button', { name: /sign in with google/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /continue with google/i })).toBeVisible()
 
     const servedBuild = await page.evaluate(async () => {
       const html = await (await fetch('./index.html', { cache: 'no-store' })).text()

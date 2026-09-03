@@ -99,7 +99,12 @@ export function App() {
         />
       )}
       <OfflineBanner />
-      <main className="app__main" ref={scroller}>
+      {/*
+        tabIndex 0 because this is the scroll owner: a scrollable region with
+        no focusable children is unreachable by keyboard, which axe flags and a
+        keyboard user simply experiences as content they cannot scroll.
+      */}
+      <main className="app__main" ref={scroller} tabIndex={0}>
         <Routes>
           <Route path="/" element={<MyCoffee />} />
           <Route path="/everyone" element={<AllBalances />} />

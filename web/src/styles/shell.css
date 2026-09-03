@@ -287,7 +287,13 @@
   font-size: var(--step-0);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 120ms ease, scale 120ms ease;
+  /*
+   * Scale only. Transitioning the background meant that on every load the
+   * button visibly faded from disabled grey into rust as the balance arrived —
+   * and while it was mid-fade its label genuinely failed contrast, which is how
+   * axe found it.
+   */
+  transition: scale 120ms ease;
 }
 
 .fab:hover:not(:disabled) {
@@ -484,9 +490,34 @@
 }
 
 .login__mark {
-  width: min(9.5rem, 45vw);
+  /*
+   * Capped against the viewport *height* as well as its width. In landscape
+   * the screen is 342px tall, and a mark sized only against width pushed the
+   * call to action below the fold — decoration is never allowed to do that.
+   */
+  width: min(9.5rem, 45vw, 24vh);
   height: auto;
   margin-bottom: var(--gap-xs);
+}
+
+/* A short viewport spends its room on the button, not on the trimmings. */
+@media (max-height: 30rem) {
+  .login {
+    padding-block: calc(env(safe-area-inset-top) + var(--gap-m))
+      calc(env(safe-area-inset-bottom) + var(--gap-m));
+  }
+
+  .login__card {
+    gap: var(--gap-xs);
+  }
+
+  .login__sub {
+    margin-bottom: var(--gap-xs);
+  }
+
+  .login__foot {
+    display: none;
+  }
 }
 
 .login__title {
