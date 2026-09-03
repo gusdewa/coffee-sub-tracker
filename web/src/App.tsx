@@ -1,8 +1,8 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from './auth/useAuth'
 import { hasQaSession, setQaSession, ApiError } from './api/client'
-import { signInWithGoogle, signOut } from './auth/firebase'
+import { signOut } from './auth/firebase'
 import { useCoffee, loadMe } from './state/coffee'
 import { useOnboarding } from './onboarding/useOnboarding'
 import { AppHeader } from './shell/AppHeader'
@@ -17,43 +17,7 @@ import { QaRedeem } from './screens/QaRedeem'
 import { AdminMembers } from './screens/AdminMembers'
 import { ClaimIdentity } from './screens/ClaimIdentity'
 import { OfflineBanner } from './components/OfflineBanner'
-
-function SignIn() {
-  const [error, setError] = useState<string | null>(null)
-
-  const signIn = async () => {
-    setError(null)
-    try {
-      await signInWithGoogle()
-    } catch (err) {
-      // Google sign-in is unavailable until the Firebase project has its
-      // provider enabled; saying so beats a button that silently does nothing.
-      const code = (err as { code?: string }).code ?? ""
-      setError(
-        code.includes("configuration-not-found") || code.includes("internal-error")
-          ? "Google sign-in is not switched on for this project yet. Ask an admin."
-          : "Could not sign in. Please try again.",
-      )
-    }
-  }
-
-  return (
-    <div className="screen screen--centred">
-      <div className="signin">
-        <h1 className="signin__title">Office coffee</h1>
-        <p className="signin__sub">Your subscription balance, without the group chat.</p>
-        <button type="button" className="drink" onClick={() => void signIn()}>
-          Sign in with Google
-        </button>
-        {error && (
-          <p className="error error--inline" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
+import { SignIn } from './screens/SignIn'
 
 export function App() {
   const { user, loading } = useAuth()
@@ -87,7 +51,18 @@ export function App() {
 
   const isQaRoute = location.pathname.startsWith('/qa')
 
-  if (loading) return <div className="screen screen--centred" aria-busy="true" />
+  // The scroller is <main>, so a new route has to be told to start at the top;
+  // otherwise it inherits wherever the previous screen happened to be left.
+  const scroller = useRef<HTMLElement>(null)
+  useEffect(() => {
+    // scrollTop rather than scrollTo: it needs no smooth-scroll opt-out under
+    // reduced motion, and it exists everywhere the app runs.
+    if (scroller.current) scroller.current.scrollTop = 0
+  }, [location.pathname])
+
+  // A state of the login screen, not a blank page: anyone already signed in
+  // must never see a sign-in button appear and then vanish.
+  if (loading) return <SignIn restoring />
 
   // The QA route must run even when signed out — redeeming is what signs you in.
   // A redeemed QA session stands in for a signed-in user.
@@ -124,7 +99,7 @@ export function App() {
         />
       )}
       <OfflineBanner />
-      <main className="app__main">
+      <main className="app__main" ref={scroller}>
         <Routes>
           <Route path="/" element={<MyCoffee />} />
           <Route path="/everyone" element={<AllBalances />} />

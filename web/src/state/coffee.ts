@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { api, type MeResponse } from '../api/client'
+import { isOffline, subscribeOnline } from './online'
 
 /**
  * The balance, and the two things you can do to it.
@@ -49,7 +50,7 @@ const initial = (): CoffeeState => ({
   error: null,
   busy: false,
   undo: null,
-  offline: typeof navigator === 'undefined' ? false : !navigator.onLine,
+  offline: isOffline(),
   revision: 0,
 })
 
@@ -70,12 +71,9 @@ function clearUndoTimer(): void {
   undoTimer = undefined
 }
 
-if (typeof window !== 'undefined') {
-  // Offline is shell state, not banner state: the banner and the Drink action
-  // have to agree, or the button invites a tap that cannot be honoured.
-  window.addEventListener('online', () => set({ offline: false }))
-  window.addEventListener('offline', () => set({ offline: true }))
-}
+// Offline is shell state, not banner state: the banner, the Drink action and
+// the login screen have to agree, so all three read state/online.ts.
+subscribeOnline(() => set({ offline: isOffline() }))
 
 export function getCoffeeState(): CoffeeState {
   return state

@@ -58,7 +58,7 @@
   background: var(--punch-soft);
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  color: var(--punch);
+  color: var(--punch-ink);
   font-size: var(--step--1);
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -154,8 +154,13 @@
 /* --- dock ---------------------------------------------------------------- */
 
 .dock {
-  position: fixed;
-  inset: auto 0 0;
+  /*
+   * A flex row of the shell rather than a fixed bar over it. That makes <main>
+   * the only scroll owner, and means the dock's height is accounted for by the
+   * layout instead of by a padding value kept in step by hand.
+   */
+  position: relative;
+  flex: none;
   z-index: var(--z-dock);
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -163,9 +168,10 @@
   /*
    * Pad in by whatever the viewport exceeds the content column, so the dock
    * stays under the column it belongs to instead of splaying across a 1440px
-   * window.
+   * window — and never under a landscape notch.
    */
-  padding-inline: max(0px, calc((100% - var(--column)) / 2));
+  padding-left: max(env(safe-area-inset-left), calc((100% - var(--column)) / 2));
+  padding-right: max(env(safe-area-inset-right), calc((100% - var(--column)) / 2));
   padding-bottom: env(safe-area-inset-bottom);
   /* min-height, not height: large text grows the bar instead of clipping it. */
   min-height: calc(var(--dock-height) + env(safe-area-inset-bottom));
@@ -218,7 +224,7 @@
 }
 
 .dock__link.active {
-  color: var(--punch);
+  color: var(--punch-ink);
 }
 
 .dock__link.active .dock__pill {
@@ -246,7 +252,7 @@
    * the Drink action rides up rather than being covered.
    */
   bottom: calc(
-    var(--dock-height) + env(safe-area-inset-bottom) + var(--update-h) + var(--gap-stack)
+    var(--dock-h, env(safe-area-inset-bottom)) + var(--update-h) + var(--gap-stack)
   );
   z-index: var(--z-fab);
   display: flex;
@@ -256,7 +262,8 @@
   width: 100%;
   max-width: var(--column);
   margin: 0 auto;
-  padding: 0 var(--gap-m);
+  padding: 0 max(var(--gap-m), env(safe-area-inset-right)) 0
+    max(var(--gap-m), env(safe-area-inset-left));
   /* The row spans the column; only its children are tappable. */
   pointer-events: none;
 }
@@ -270,13 +277,13 @@
   align-items: center;
   justify-content: center;
   gap: var(--gap-xs);
-  min-height: 3.25rem;
+  min-height: var(--fab-height);
   padding: 0 var(--gap-m);
   background: var(--action);
   border: none;
   border-radius: var(--radius-stamp);
   box-shadow: var(--shadow-lift);
-  color: #fff;
+  color: var(--on-action);
   font-size: var(--step-0);
   font-weight: 600;
   cursor: pointer;
@@ -312,6 +319,7 @@
   align-items: center;
   gap: var(--gap-s);
   align-self: stretch;
+  min-height: var(--snackbar-height);
   padding: var(--gap-xs) var(--gap-xs) var(--gap-xs) var(--gap-m);
   background: var(--ink);
   border-radius: var(--radius-card);
@@ -419,7 +427,7 @@
 .driver-popover.coffee-tour .driver-popover-next-btn {
   background: var(--action);
   border-color: var(--action);
-  color: #fff;
+  color: var(--on-action);
 }
 
 .driver-popover.coffee-tour .driver-popover-arrow {
@@ -436,4 +444,119 @@
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* --- login --------------------------------------------------------------- */
+
+/*
+ * A page that must survive 320px, a 342px-tall landscape viewport and 200%
+ * text without ever hiding the one button on it.
+ *
+ * Centred by auto margin inside a grid, not by top:50% and a transform. The
+ * transform trick centres the box on the viewport and then lets the top half
+ * fall off the edge with nothing to scroll to, which is precisely what happens
+ * at large text in landscape.
+ */
+.login {
+  min-height: 100svh;
+  min-height: 100dvh;
+  display: grid;
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + var(--gap-l))
+    max(var(--gap-m), env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + var(--gap-l))
+    max(var(--gap-m), env(safe-area-inset-left));
+  background: radial-gradient(
+      120% 70% at 50% 0%,
+      color-mix(in srgb, var(--punch-soft) 45%, transparent),
+      transparent 70%
+    ),
+    var(--paper);
+}
+
+.login__card {
+  /* Centres when there is room, and simply starts at the top when there is not. */
+  margin: auto;
+  width: min(100%, 23rem);
+  display: grid;
+  justify-items: center;
+  gap: var(--gap-s);
+  text-align: center;
+}
+
+.login__mark {
+  width: min(9.5rem, 45vw);
+  height: auto;
+  margin-bottom: var(--gap-xs);
+}
+
+.login__title {
+  margin: 0;
+  font-size: var(--step-2);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.login__sub {
+  max-width: 26ch;
+  margin: 0 0 var(--gap-s);
+  color: var(--ink-soft);
+  text-wrap: balance;
+}
+
+.login__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-s);
+  width: 100%;
+  /* Comfortably past the 48px the guidance asks for. */
+  min-height: 3.25rem;
+  padding: 0 var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  font-size: var(--step-0);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.login__cta:hover:not(:disabled) {
+  border-color: var(--ink-faint);
+}
+
+.login__cta:disabled {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+.login__cta:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+.login__status {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+
+/* Inline and in normal flow: an error that scrolls away with the page it
+   belongs to is an error nobody reads. */
+.login__error {
+  width: 100%;
+  margin: 0;
+  padding: var(--gap-s) var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--alert);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  font-size: var(--step--1);
+  text-align: left;
+}
+
+.login__foot {
+  margin: var(--gap-s) 0 0;
+  color: var(--ink-faint);
+  font-size: var(--step--1);
 }

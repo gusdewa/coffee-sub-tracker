@@ -10,7 +10,7 @@
 :root {
   --ink: #17202a;
   --ink-soft: #47525e;
-  --ink-faint: #8994a0;
+  --ink-faint: #656e79;
 
   --paper: #f2f4f1;
   --paper-raised: #ffffff;
@@ -18,11 +18,20 @@
 
   --punch: #2e7d5b;
   --punch-soft: #d7e7df;
+  /* Green as *text* on --punch-soft. --punch itself only reaches 3.9 there. */
+  --punch-ink: #276b4e;
   --spent: #bcc4bd;
 
   --action: #b4531f;
   --action-press: #90400f;
   --alert: #a8331f;
+  /*
+   * Text and icons sitting *on* those two colours. In dark mode both are
+   * lightened for the dark ground, at which point white on them drops to
+   * 3.3:1 — so the ink flips instead of the accent being compromised.
+   */
+  --on-action: #ffffff;
+  --on-alert: #ffffff;
 
   --focus: #1d5fd0;
 
@@ -62,6 +71,9 @@
    * without anything above it being measured by hand.
    */
   --dock-height: 4.25rem;
+  /* The floating layers, so bottom clearance can be computed rather than guessed. */
+  --fab-height: 3.25rem;
+  --snackbar-height: 3.5rem;
   /* The content column, previously a 34rem literal repeated in four rules. */
   --column: 34rem;
 
@@ -88,7 +100,11 @@
   --z-tour-card: 81;
   --z-dialog: 90;
 
-  /* Published by UpdatePrompt while it is visible; see shell.css. */
+  /*
+   * Measured at runtime and published onto the root, because both are things a
+   * stylesheet cannot know: how tall the update prompt is while it is showing,
+   * and how tall the dock has actually grown at the user's text size.
+   */
   --update-h: 0px;
 }
 
@@ -96,7 +112,7 @@
   :root:not([data-theme='light']) {
     --ink: #e8ece8;
     --ink-soft: #a9b3ab;
-    --ink-faint: #77827a;
+    --ink-faint: #8b968d;
 
     --paper: #12171a;
     --paper-raised: #1b2226;
@@ -104,11 +120,14 @@
 
     --punch: #57b48b;
     --punch-soft: #1f3a30;
+    --punch-ink: #57b48b;
     --spent: #3c474a;
 
     --action: #d8703a;
     --action-press: #b85a28;
     --alert: #e06a55;
+    --on-action: #1a1108;
+    --on-alert: #1a1108;
 
     --focus: #6fa4ff;
   }

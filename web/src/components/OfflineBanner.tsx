@@ -1,13 +1,12 @@
-import { useCoffee } from '../state/coffee'
+import { useOffline } from '../state/online'
 
 /**
- * Offline state now lives in the coffee store, so this banner and the Drink
- * action are guaranteed to agree. They used to be independent: this component
- * carried a comment saying going offline disables the action, while the button
- * had no such check and simply failed after the tap.
+ * The banner, the Drink action and the login screen all read state/online.ts,
+ * so they cannot disagree. This component used to carry a comment saying that
+ * going offline disables the action while the button had no such check.
  */
 export function OfflineBanner() {
-  const { offline } = useCoffee()
+  const offline = useOffline()
   if (!offline) return null
   return (
     <p className="offline" role="status">

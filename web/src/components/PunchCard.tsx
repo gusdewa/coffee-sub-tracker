@@ -32,8 +32,8 @@ export function PunchCard({
   return (
     <article className={`card${isNext ? ' card--next' : ''}${remaining === 0 ? ' card--spent' : ''}`}>
       <header className="card__head">
-        {/* h2: the route title in the app header is the page h1. */}
-        <h2 className="card__title">{batchLabel || 'Subscription'}</h2>
+        {/* h3: page h1 is the route title, h2 is the "Your cards" section. */}
+        <h3 className="card__title">{batchLabel || 'Subscription'}</h3>
         <span className="card__date">{date}</span>
       </header>
 

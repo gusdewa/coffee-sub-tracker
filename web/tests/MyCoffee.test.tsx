@@ -102,3 +102,49 @@ describe('My Coffee', () => {
     expect(container.querySelector('[data-tour="balance"]')).not.toBeNull()
   })
 })
+
+/*
+ * The page answers three questions in order: how many are left, which card the
+ * next one comes off, and what you can do now. The third is the floating
+ * action in the shell, so this page must not grow a second big Drink button.
+ */
+describe('Home reads in the right order', () => {
+  test('the balance comes before the card list in the document', async () => {
+    me.mockResolvedValue(withBalance(3))
+    const { container } = render(<MyCoffee />)
+    await screen.findByText('3')
+
+    const hero = container.querySelector('[data-tour="balance"]')!
+    const cards = container.querySelector('.home__cards')!
+    expect(hero.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  test('names the card the next cup will come off', async () => {
+    me.mockResolvedValue(withBalance(3))
+    render(<MyCoffee />)
+    expect(await screen.findByText(/next cup from/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/September beans/).length).toBeGreaterThan(0)
+  })
+
+  test('does not repeat the Drink action inside the page', async () => {
+    me.mockResolvedValue(withBalance(3))
+    render(<MyCoffee />)
+    await screen.findByText('3')
+    // The shell owns the repeat action; two of them would compete.
+    expect(screen.queryByRole('button', { name: /drink/i })).toBeNull()
+  })
+
+  test('an empty balance says what to do instead of naming a next card', async () => {
+    me.mockResolvedValue(withBalance(0))
+    render(<MyCoffee />)
+    expect(await screen.findByText(/Ask an admin to add a subscription/)).toBeInTheDocument()
+    expect(screen.queryByText(/next cup from/i)).toBeNull()
+  })
+
+  test('the card list is a labelled section, so the headings step by one', async () => {
+    me.mockResolvedValue(withBalance(3))
+    render(<MyCoffee />)
+    expect(await screen.findByRole('heading', { name: /your cards/i })).toBeInTheDocument()
+  })
+})
+

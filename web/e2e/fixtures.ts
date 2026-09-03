@@ -14,14 +14,25 @@ export const API = 'https://api.invalid.e2e'
 export interface Fixture {
   role?: 'member' | 'admin'
   remaining?: number
+  /** How many batches the member holds — a short list and a long one scroll differently. */
+  batches?: number
   /** Seed the tour as already seen, so it does not open over other assertions. */
   tourSeen?: boolean
+}
+
+/** The login screen, with no session and no API reachable. */
+export async function loginScreen(page: Page, url: string): Promise<void> {
+  await page.route(`${API}/**`, (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }),
+  )
+  await page.goto(url)
+  await page.waitForSelector('.login__cta, .login__status', { state: 'visible' })
 }
 
 export async function signedInShell(
   page: Page,
   url: string,
-  { role = 'member', remaining = 5, tourSeen = true }: Fixture = {},
+  { role = 'member', remaining = 5, batches = 1, tourSeen = true }: Fixture = {},
 ): Promise<{ drinks: () => number }> {
   let drinkCount = 0
   let total = remaining
@@ -35,6 +46,15 @@ export async function signedInShell(
       remaining: left,
       effectiveAt: '2026-09-01T00:00:00.000Z',
     },
+    // Spent batches, oldest first, to give the list real length.
+    ...Array.from({ length: Math.max(0, batches - 1) }, (_, i) => ({
+      batchId: `B${i + 2}`,
+      batchLabel: `Batch ${i + 2}`,
+      granted: 8,
+      consumed: 8,
+      remaining: 0,
+      effectiveAt: `2026-0${(i % 8) + 1}-01T00:00:00.000Z`,
+    })),
   ]
 
   await page.route(`${API}/**`, async (route) => {

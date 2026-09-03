@@ -1,13 +1,43 @@
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  /* svh so the shell is never taller than the *smallest* viewport state, dvh so
+     it grows back when the browser chrome retracts. */
+  min-height: 100svh;
+  height: 100dvh;
+
+  /*
+   * Everything that floats over the scroller, added once.
+   *
+   * The dock is deliberately absent: it is a flex row now, so it sits outside
+   * <main> and the layout has already accounted for it. Including it here was
+   * the double-count the old fixed layout invited.
+   */
+  --overlay-clearance: calc(
+    var(--update-h) + var(--fab-height) + var(--gap-stack) + var(--gap-m)
+  );
+}
+
+/* A visible undo takes its own line, so the content has to clear that too. */
+.app:has(.snackbar) {
+  --overlay-clearance: calc(
+    var(--update-h) + var(--fab-height) + var(--snackbar-height) + 2 * var(--gap-stack) +
+      var(--gap-m)
+  );
 }
 
 .app__main {
-  flex: 1;
-  /* Room for the dock and the floating Drink action above it. */
-  padding-bottom: calc(var(--dock-height) + 5.5rem + env(safe-area-inset-bottom));
+  flex: 1 1 auto;
+  /* Without this a flex child refuses to shrink, and the document scrolls
+     behind the dock instead of the column scrolling inside it. */
+  min-height: 0;
+  overflow-y: auto;
+  /* A flick that reaches the end must not drag the page behind it. */
+  overscroll-behavior-y: contain;
+  padding-bottom: var(--overlay-clearance);
+  /* So focus never lands underneath the floating action (WCAG 2.4.11). */
+  scroll-padding-bottom: var(--overlay-clearance);
+  scroll-padding-top: var(--gap-s);
 }
 
 /*
@@ -16,13 +46,16 @@
  * left the button floating 4rem above a bar that was never rendered.
  */
 .app--bare .app__main {
+  /* No dock and no floating action here — just its own fixed confirm bar. */
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
 
 .screen {
   max-width: var(--column);
   margin: 0 auto;
-  padding: var(--gap-m) var(--gap-m) var(--gap-l);
+  padding: var(--gap-m) max(var(--gap-m), env(safe-area-inset-right)) var(--gap-l)
+    max(var(--gap-m), env(safe-area-inset-left));
 }
 
 .screen--centred {
@@ -39,31 +72,76 @@
   letter-spacing: -0.02em;
 }
 
-/* --- the hero: the number is the whole point of the screen --------------- */
+/* --- the counter slip: the one composition Home is built around --------- */
 
-.greeting {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: var(--step-0);
+/*
+ * A torn-off counter slip: the number, a perforation, and which card the next
+ * cup comes off. It borrows the dock's tear edge so the page and the shell read
+ * as one object — a card you punch — instead of a dashboard tile that happens
+ * to sit above a nav bar.
+ */
+.slip {
+  position: relative;
+  margin: 0 0 var(--gap-l);
+  padding: var(--gap-l) var(--gap-m) var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
+  text-align: center;
 }
 
-.hero {
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-s);
-  margin: var(--gap-xs) 0 var(--gap-l);
+.slip__count {
+  display: grid;
+  gap: var(--gap-xs);
+  margin: 0 0 var(--gap-m);
 }
 
-.hero__number {
+.slip__number {
+  color: var(--punch);
   font-size: var(--step-hero);
   font-weight: 700;
   line-height: 0.85;
   letter-spacing: -0.05em;
 }
 
-.hero__unit {
-  font-size: var(--step-1);
+/* Nothing left is a different fact, not a smaller one. */
+.slip:has(.slip__next--empty) .slip__number {
+  color: var(--spent);
+}
+
+.slip__unit {
   color: var(--ink-soft);
+  font-size: var(--step-1);
+}
+
+.slip__tear {
+  height: 12px;
+  /* Out to the slip's own edges, including its border. */
+  margin-inline: calc(-1 * var(--gap-m) - 1px);
+  background: radial-gradient(circle at center, var(--paper) 0 3.5px, transparent 3.6px) repeat-x;
+  background-size: 14px 12px;
+}
+
+.slip__next {
+  margin: var(--gap-m) 0 0;
+  color: var(--ink-soft);
+  text-wrap: balance;
+}
+
+.slip__next strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.slip__next--empty {
+  margin-top: var(--gap-m);
+}
+
+.home__heading {
+  margin: 0 0 var(--gap-s);
+  color: var(--ink-soft);
+  font-size: var(--step-0);
+  font-weight: 600;
 }
 
 /* --- punch cards --------------------------------------------------------- */
@@ -88,7 +166,11 @@
 }
 
 .card--spent {
-  opacity: 0.55;
+  background: var(--paper);
+}
+
+.card--spent .card__title {
+  color: var(--ink-soft);
 }
 
 .card__head {
@@ -147,7 +229,7 @@
   padding: 1px 8px;
   background: var(--punch-soft);
   border-radius: var(--radius-pill);
-  color: var(--punch);
+  color: var(--punch-ink);
   font-weight: 600;
 }
 
@@ -183,7 +265,7 @@
   background: var(--action);
   border: none;
   border-radius: var(--radius-pill);
-  color: #fff;
+  color: var(--on-action);
   font-size: var(--step-1);
   font-weight: 600;
   cursor: pointer;
@@ -337,7 +419,7 @@
   margin: 0;
   padding: 6px var(--gap-m);
   background: var(--alert);
-  color: #fff;
+  color: var(--on-alert);
   font-size: var(--step--1);
   text-align: center;
 }
@@ -461,7 +543,7 @@
 .person__save {
   background: var(--action);
   border: none;
-  color: #fff;
+  color: var(--on-action);
   font-weight: 600;
 }
 
@@ -485,7 +567,7 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--dock-height) + env(safe-area-inset-bottom));
+  bottom: var(--dock-h, env(safe-area-inset-bottom));
   z-index: var(--z-update);
   display: flex;
   align-items: center;
@@ -519,7 +601,7 @@
   background: var(--action);
   border: none;
   border-radius: var(--radius-pill);
-  color: #fff;
+  color: var(--on-action);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
