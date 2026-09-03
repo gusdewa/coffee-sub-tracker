@@ -26,7 +26,18 @@ export async function loginScreen(page: Page, url: string): Promise<void> {
     route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }),
   )
   await page.goto(url)
-  await page.waitForSelector('.login__cta, .login__status', { state: 'visible' })
+
+  /*
+   * Wait for the screen to be *ready*, not merely rendered.
+   *
+   * `.login__status` is the "checking your session" state, so accepting it here
+   * let a test proceed while Firebase was still restoring persistence — and
+   * every assertion about the button then failed fifteen seconds later with
+   * "element not found", which reads as a broken login screen rather than as a
+   * slow one. Firebase initialisation is the slowest thing on this page and it
+   * competes with whatever else the run is doing, so it gets a wait of its own.
+   */
+  await page.waitForSelector('.login__cta', { state: 'visible', timeout: 60_000 })
 }
 
 export async function signedInShell(
