@@ -126,6 +126,13 @@ export const TXN_RANGE: KeyRange = prefixRange(FAMILY.transaction)
 export const MEMBER_RANGE: KeyRange = prefixRange(FAMILY.member)
 export const LINK_AUDIT_RANGE: KeyRange = prefixRange(FAMILY.linkAudit)
 
+/**
+ * One fixed row per ledger partition serializes Drink and Put Back. Keeping the
+ * row in the member partition lets both operations include it in their Azure
+ * Table entity-group transaction.
+ */
+export const LATEST_CONSUME_MARKER_ROW_KEY = 'U|LATEST_CONSUME' as const
+
 // ---------------------------------------------------------------------------
 // CoffeeLedger — partition per member
 // ---------------------------------------------------------------------------

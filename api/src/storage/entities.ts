@@ -62,6 +62,16 @@ export interface ReversalSentinelEntity extends EntityBase {
   createdAt: Date
 }
 
+/** `U|LATEST_CONSUME` — serializes the latest-only Put Back invariant. */
+export interface LatestConsumeMarkerEntity extends EntityBase {
+  kind: 'latest-consume-marker'
+  /** Never cleared, so reversing the latest Drink cannot expose an older one. */
+  latestOpId: string
+  /** Empty after the latest Drink has been reversed. */
+  activeOpId: string
+  updatedAt: Date
+}
+
 /** `I|<opId>` — inserting this is what makes a duplicate tap impossible. */
 export interface IdempotencyEntity extends EntityBase {
   kind: 'idempotency'

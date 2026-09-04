@@ -102,6 +102,17 @@ export interface MeResponse {
   member: { memberId: string; displayName: string; role: 'member' | 'admin'; isQa: boolean }
   totalRemaining: number
   allocations: AllocationView[]
+  /** Optional only while an older API may still be serving a rolling deploy. */
+  undoOffer?: UndoOfferResponse | null
+}
+
+export interface UndoOfferResponse {
+  opId: string
+  allocRowKey: string
+  batchId: string
+  batchLabel: string
+  createdAt: string
+  undoExpiresAt: string
 }
 
 export interface DrinkResponse {

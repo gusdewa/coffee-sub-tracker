@@ -116,7 +116,19 @@ export function loadMe(): Promise<void> {
   const promise = (async () => {
     try {
       const data = await api.me()
-      if (state.revision === revision) set({ data, error: null })
+      if (state.revision === revision) {
+        // The offer comes from ledger history, not browser memory, so reloads
+        // and other devices rediscover the same authoritative Put Back action.
+        // `undefined` keeps compatibility with an old API during rolling deploys.
+        if (data.undoOffer !== undefined) {
+          clearTimer(undoTimer)
+          undoTimer = undefined
+          set({ data, error: null, undo: data.undoOffer })
+          if (data.undoOffer) armUndoExpiry(data.undoOffer.opId, data.undoOffer.undoExpiresAt)
+        } else {
+          set({ data, error: null })
+        }
+      }
     } catch (err) {
       if (state.revision === revision) set({ error: err as Error })
     }
@@ -211,7 +223,11 @@ export async function undoDrink(): Promise<void> {
     const error = err as Error
     if (
       error instanceof ApiError &&
-      (error.code === 'UNDO_WINDOW_EXPIRED' || error.code === 'ALREADY_UNDONE')
+      (
+        error.code === 'UNDO_WINDOW_EXPIRED'
+        || error.code === 'ALREADY_UNDONE'
+        || error.code === 'NOT_LATEST_CONSUME'
+      )
     ) {
       clearTimer(undoTimer)
       undoTimer = undefined

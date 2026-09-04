@@ -165,7 +165,7 @@ describe('idempotency — a retry is not a second drink (plan §4.1)', () => {
     expect(second.txnRowKey).toBe(first.txnRowKey)
     expect(second.remainingTotal).toBe(first.remainingTotal)
     expect(first.createdAt).toBe('2026-09-04T10:00:00.000Z')
-    expect(first.undoExpiresAt).toBe('2026-09-04T10:00:37.000Z')
+    expect(first.undoExpiresAt).toBe('2026-09-04T16:59:59.999Z')
     expect(second.createdAt).toBe(first.createdAt)
     expect(second.undoExpiresAt).toBe(first.undoExpiresAt)
 

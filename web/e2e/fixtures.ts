@@ -18,6 +18,8 @@ export interface Fixture {
   batches?: number
   /** Seed the tour as already seen, so it does not open over other assertions. */
   tourSeen?: boolean
+  /** Server-backed latest-today drink, as returned after a reload. */
+  undoOffer?: boolean
 }
 
 /** The login screen, with no session and no API reachable. */
@@ -43,7 +45,7 @@ export async function loginScreen(page: Page, url: string): Promise<void> {
 export async function signedInShell(
   page: Page,
   url: string,
-  { role = 'member', remaining = 5, batches = 1, tourSeen = true }: Fixture = {},
+  { role = 'member', remaining = 5, batches = 1, tourSeen = true, undoOffer = false }: Fixture = {},
 ): Promise<{
   drinks: () => number
   undos: () => number
@@ -53,6 +55,10 @@ export async function signedInShell(
   let drinkCount = 0
   let undoCount = 0
   let total = remaining
+  let offerActive = undoOffer
+  let offerOpId = undoOffer ? 'morning-op' : ''
+  let offerCreatedAt = '2026-09-04T01:00:00.000Z'
+  let offerExpiresAt = '2099-01-01T00:00:00.000Z'
   const whatsappHandoffs: string[] = []
   const handoffSuccessText: string[] = []
 
@@ -104,26 +110,39 @@ export async function signedInShell(
         member: { memberId: 'M1', displayName: 'Dewa Wijaya', role, isQa: true },
         totalRemaining: total,
         allocations: allocations(total),
+        undoOffer: offerActive ? {
+          opId: offerOpId,
+          allocRowKey: 'A|SEPTEMBER',
+          batchId: 'B1',
+          batchLabel: 'September beans',
+          createdAt: offerCreatedAt,
+          undoExpiresAt: offerExpiresAt,
+        } : null,
       })
     }
     if (path === '/api/me/drinks' && request.method() === 'POST') {
       drinkCount += 1
       total -= 1
+      offerActive = true
+      offerOpId = `op-${drinkCount}`
+      offerCreatedAt = new Date().toISOString()
+      offerExpiresAt = new Date(Date.now() + 90_000).toISOString()
       return json({
-        opId: `op-${drinkCount}`,
+        opId: offerOpId,
         txnRowKey: 'T',
         allocRowKey: 'A|SEPTEMBER',
         batchId: 'B1',
         batchLabel: 'September beans',
         remainingTotal: total,
         replayed: false,
-        createdAt: new Date().toISOString(),
-        undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+        createdAt: offerCreatedAt,
+        undoExpiresAt: offerExpiresAt,
       })
     }
     if (path.endsWith('/undo') && request.method() === 'POST') {
       undoCount += 1
       total += 1
+      offerActive = false
       return json({ remainingTotal: total })
     }
     if (path === '/api/me/history') {

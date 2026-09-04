@@ -59,6 +59,34 @@ afterEach(() => {
 })
 
 describe('the coffee store', () => {
+  test('hydrates today’s server-backed Put Back offer after a reload', async () => {
+    vi.useFakeTimers()
+    const undoExpiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
+    me.mockResolvedValue({
+      ...balance(4),
+      undoOffer: {
+        opId: 'morning-op',
+        allocRowKey: 'A|SEPTEMBER',
+        batchId: 'B1',
+        batchLabel: 'September beans',
+        createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        undoExpiresAt,
+      },
+    })
+
+    await store.loadMe()
+
+    expect(store.getCoffeeState().undo).toEqual({
+      opId: 'morning-op',
+      allocRowKey: 'A|SEPTEMBER',
+      batchId: 'B1',
+      batchLabel: 'September beans',
+      createdAt: expect.any(String),
+      undoExpiresAt,
+    })
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
   test('simultaneous balance refreshes share one authoritative request', async () => {
     let release: (value: ReturnType<typeof balance>) => void = () => {}
     me.mockImplementation(() => new Promise((resolve) => (release = resolve)))
@@ -165,6 +193,20 @@ describe('the coffee store', () => {
     undoCall.mockRejectedValueOnce(new ApiError('UNDO_WINDOW_EXPIRED', 'expired', 409))
     await store.undoDrink()
     expect(store.getCoffeeState().undo).toBeNull()
+  })
+
+  test('a stale offer is cleared when the server says it is not the latest consume', async () => {
+    drinkCall.mockResolvedValue(drinkResult())
+    await store.loadMe()
+    await store.drink()
+    undoCall.mockRejectedValueOnce(
+      new ApiError('NOT_LATEST_CONSUME', 'Only the latest drink can be undone', 409),
+    )
+
+    await store.undoDrink()
+
+    expect(store.getCoffeeState().undo).toBeNull()
+    expect(store.getCoffeeState().error).toMatchObject({ code: 'NOT_LATEST_CONSUME' })
   })
 
   test('reset cleans up the pending Put it back expiry timer', async () => {

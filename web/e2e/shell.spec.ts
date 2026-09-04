@@ -176,6 +176,17 @@ test('a cup can be taken once, warned before a second, and put back from its car
   await expect(putBack).toHaveCount(0)
 })
 
+test('a morning drink is recoverable from its exact card after reopening the app', async ({ page }) => {
+  const api = await signedInShell(page, server.url, { remaining: 4, undoOffer: true })
+  const putBack = page.getByRole('button', { name: 'Put back cup from September beans' })
+
+  await expect(putBack).toBeVisible()
+  await putBack.click()
+  await expect.poll(() => api.undos()).toBe(1)
+  await expect(page.locator('.slip__number')).toHaveText('5')
+  await expect(putBack).toHaveCount(0)
+})
+
 test('the snackbar and the Drink action never overlap', async ({ page }) => {
   await signedInShell(page, server.url)
   await page.locator('.fab').click()
