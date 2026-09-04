@@ -7,12 +7,16 @@ import {
   idempotencyRowKey,
   assertValidOpId,
   ALLOC_RANGE,
+  TXN_RANGE,
+  LATEST_CONSUME_MARKER_ROW_KEY,
 } from '../storage/keys.js'
 import { isConflict, isNotFound, isPreconditionFailed } from '../storage/tableClient.js'
 import { StorageConflictError, MAX_ATTEMPTS } from './consume.js'
+import { sameDayUndoDeadline } from './undoPolicy.js'
 
 /**
- * Reverse a consumption within a short window.
+ * Reverse a consumption during the Jakarta day in which it was recorded,
+ * while retaining the original short grace across local midnight.
  *
  * Two design points carry the weight:
  *
@@ -59,10 +63,18 @@ export class NotReversibleError extends Error {
   }
 }
 
+export class NotLatestConsumeError extends Error {
+  readonly code = 'NOT_LATEST_CONSUME'
+  constructor() {
+    super('Only the latest drink can be undone')
+    this.name = 'NotLatestConsumeError'
+  }
+}
+
 export interface UndoDeps {
   ledger: TableClient
   now?: () => Date
-  /** Used only for legacy transactions which predate persisted deadlines. */
+  /** Short grace retained across the Jakarta midnight boundary. */
   undoWindowSeconds?: number
 }
 
@@ -76,6 +88,65 @@ export interface UndoResult {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+interface LatestConsumeMarker {
+  latestOpId: string
+  activeOpId: string
+  etag?: string
+}
+
+async function readLatestConsumeMarker(
+  ledger: TableClient,
+  partitionKey: string,
+): Promise<LatestConsumeMarker | undefined> {
+  try {
+    const row = await ledger.getEntity(partitionKey, LATEST_CONSUME_MARKER_ROW_KEY)
+    const record = row as Record<string, unknown>
+    return {
+      latestOpId: String(record.latestOpId ?? ''),
+      activeOpId: String(record.activeOpId ?? ''),
+      etag: String(record.etag),
+    }
+  } catch (err) {
+    if (isNotFound(err)) return undefined
+    throw err
+  }
+}
+
+/** Derive the marker state for partitions written before markers existed. */
+async function deriveLatestConsumeMarker(
+  ledger: TableClient,
+  partitionKey: string,
+): Promise<LatestConsumeMarker | undefined> {
+  let latestOpId: string | undefined
+  let latestCreatedAt: string | undefined
+  let ambiguousLatest = false
+  const reversed = new Set<string>()
+  for await (const entity of ledger.listEntities({
+    queryOptions: {
+      filter: odata`PartitionKey eq ${partitionKey} and RowKey ge ${TXN_RANGE.from} and RowKey lt ${TXN_RANGE.to}`,
+    },
+  })) {
+    const row = entity as Record<string, unknown>
+    if (row.type === 'CONSUME') {
+      const createdAt = String(row.createdAt ?? '')
+      if (latestOpId === undefined) {
+        latestOpId = String(row.opId ?? '')
+        latestCreatedAt = createdAt
+      } else if (createdAt === latestCreatedAt && String(row.opId ?? '') !== latestOpId) {
+        // Markerless rows with equal timestamps have no authoritative commit
+        // order: RowKey falls back to opId. Fail closed.
+        ambiguousLatest = true
+      }
+    }
+    if (row.type === 'REVERSAL') reversed.add(String(row.reversesOpId ?? ''))
+  }
+  if (latestOpId === undefined || ambiguousLatest) return undefined
+  return {
+    latestOpId,
+    activeOpId: reversed.has(latestOpId) ? '' : latestOpId,
+  }
+}
 
 async function readStoredResult(
   ledger: TableClient,
@@ -131,20 +202,27 @@ export async function undoConsume(
   if (String(txn.subjectMemberId) !== memberId) throw new TransactionNotFoundError()
 
   const createdAt = new Date(String(txn.createdAt))
-  const deadline = txn.undoExpiresAt
+  // Old rows persisted only the short deadline. Taking the later of that and
+  // Jakarta end-of-day upgrades today's existing drinks without losing the
+  // original cross-midnight grace.
+  const shortDeadline = txn.undoExpiresAt
     ? new Date(String(txn.undoExpiresAt))
     : new Date(createdAt.getTime() + (deps.undoWindowSeconds ?? 90) * 1000)
-  if (now().getTime() > deadline.getTime()) throw new UndoWindowExpiredError()
+  const deadline = sameDayUndoDeadline(createdAt, shortDeadline)
 
   const allocRowKey = String(txn.allocRowKey)
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const storedMarker = await readLatestConsumeMarker(ledger, partitionKey)
+    const marker = storedMarker ?? await deriveLatestConsumeMarker(ledger, partitionKey)
+    // The original transaction was resolved above, so absence here means the
+    // ledger is inconsistent rather than permission to bypass latest-only.
+    if (!marker || marker.latestOpId !== originalOpId) throw new NotLatestConsumeError()
+    if (marker.activeOpId !== originalOpId) throw new AlreadyUndoneError()
+
     const alloc = (await ledger.getEntity(partitionKey, allocRowKey)) as Record<string, unknown>
     const consumed = Number(alloc.consumed ?? 0)
     const remaining = Number(alloc.remaining ?? 0)
-
-    const at = now()
-    const reversalTxnRowKey = transactionRowKey(at, undoOpId)
 
     // Total across the partition, with this restoration applied.
     let remainingTotal = 1
@@ -155,6 +233,14 @@ export async function undoConsume(
     })) {
       remainingTotal += Number((e as Record<string, unknown>).remaining ?? 0)
     }
+
+    // Sample time exactly once per attempt, after all retryable reads and just
+    // before constructing/submitting the write. The same instant determines
+    // eligibility and row keys, so a retry cannot cross the deadline and still
+    // reverse the drink or produce unstable timestamps within an attempt.
+    const at = now()
+    if (at.getTime() > deadline.getTime()) throw new UndoWindowExpiredError()
+    const reversalTxnRowKey = transactionRowKey(at, undoOpId)
 
     const result: UndoResult = {
       opId: undoOpId,
@@ -213,6 +299,31 @@ export async function undoConsume(
           createdAt: at,
         },
       ],
+      storedMarker
+        ? [
+            'update',
+            {
+              partitionKey,
+              rowKey: LATEST_CONSUME_MARKER_ROW_KEY,
+              kind: 'latest-consume-marker',
+              latestOpId: originalOpId,
+              activeOpId: '',
+              updatedAt: at,
+            },
+            'Merge',
+            { etag: storedMarker.etag as string },
+          ]
+        : [
+            'create',
+            {
+              partitionKey,
+              rowKey: LATEST_CONSUME_MARKER_ROW_KEY,
+              kind: 'latest-consume-marker',
+              latestOpId: originalOpId,
+              activeOpId: '',
+              updatedAt: at,
+            },
+          ],
     ]
 
     try {
@@ -220,9 +331,15 @@ export async function undoConsume(
       return result
     } catch (err) {
       if (isConflict(err)) {
-        // Either this undo op already ran, or the drink was already reversed.
         const mine = await readStoredResult(ledger, partitionKey, undoOpId)
         if (mine) return mine
+        // On a legacy partition, a concurrent Drink or Undo may have won the
+        // marker create. Retry so its marker state determines the right error.
+        if (!storedMarker && await readLatestConsumeMarker(ledger, partitionKey)) {
+          if (attempt === MAX_ATTEMPTS) throw new StorageConflictError(MAX_ATTEMPTS)
+          await sleep(Math.random() * 25 * 2 ** (attempt - 1))
+          continue
+        }
         throw new AlreadyUndoneError()
       }
       if (isPreconditionFailed(err)) {

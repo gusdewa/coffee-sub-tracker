@@ -177,7 +177,10 @@ export function createApp(deps: AppDeps = {}) {
     withAuth,
     asyncRoute(async (req, res) => {
       const ctx = req.ctx!
-      const coffee = await getMyCoffee({ ledger }, ctx.memberId)
+      const coffee = await getMyCoffee(
+        { ledger, undoWindowSeconds: config.undoWindowSeconds },
+        ctx.memberId,
+      )
       res.json({
         member: {
           memberId: ctx.memberId,

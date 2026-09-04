@@ -6,8 +6,10 @@ import {
   idempotencyRowKey,
   assertValidOpId,
   ALLOC_RANGE,
+  LATEST_CONSUME_MARKER_ROW_KEY,
 } from '../storage/keys.js'
-import { isConflict, isPreconditionFailed } from '../storage/tableClient.js'
+import { isConflict, isNotFound, isPreconditionFailed } from '../storage/tableClient.js'
+import { sameDayUndoDeadline } from './undoPolicy.js'
 
 /**
  * Consume exactly one unit from the caller's oldest unfinished allocation.
@@ -23,8 +25,9 @@ import { isConflict, isPreconditionFailed } from '../storage/tableClient.js'
  *    A duplicate delivery collides on the key and the whole batch fails, so a
  *    retry can never produce a second drink. There is no read-then-check race.
  *
- *  - **Atomicity** comes from all three rows sharing the member's partition,
+ *  - **Atomicity** comes from all four rows sharing the member's partition,
  *    which is the only scope in which Azure Table Storage offers a transaction.
+ *    The fixed marker is also the serialization point against concurrent Undo.
  *
  * A simultaneous tap and a retried tap are different events and are treated
  * differently: distinct opIds each consume, an identical opId consumes once.
@@ -53,7 +56,7 @@ export interface ConsumeDeps {
   ledger: TableClient
   /** Injectable for deterministic tests. */
   now?: () => Date
-  /** Supplied by startup config; never read from the environment here. */
+  /** Short grace retained when Jakarta midnight arrives just after a Drink. */
   undoWindowSeconds?: number
 }
 
@@ -77,6 +80,23 @@ interface AllocationRow {
   granted: number
   consumed: number
   remaining: number
+}
+
+interface LatestConsumeMarker {
+  etag: string
+}
+
+async function readLatestConsumeMarker(
+  ledger: TableClient,
+  partitionKey: string,
+): Promise<LatestConsumeMarker | undefined> {
+  try {
+    const row = await ledger.getEntity(partitionKey, LATEST_CONSUME_MARKER_ROW_KEY)
+    return { etag: String((row as Record<string, unknown>).etag) }
+  } catch (err) {
+    if (isNotFound(err)) return undefined
+    throw err
+  }
 }
 
 async function listAllocations(ledger: TableClient, partitionKey: string): Promise<AllocationRow[]> {
@@ -140,10 +160,12 @@ export async function consumeOne(
     const rows = await listAllocations(ledger, partitionKey)
     const target = rows.find((r) => r.remaining > 0)
     if (!target) throw new NoBalanceError()
+    const marker = await readLatestConsumeMarker(ledger, partitionKey)
 
     const createdAt = now()
-    const undoExpiresAt = new Date(
-      createdAt.getTime() + (deps.undoWindowSeconds ?? 90) * 1000,
+    const undoExpiresAt = sameDayUndoDeadline(
+      createdAt,
+      new Date(createdAt.getTime() + (deps.undoWindowSeconds ?? 90) * 1000),
     )
     const txnRowKey = transactionRowKey(createdAt, opId)
     const remainingTotal = rows.reduce((sum, r) => sum + r.remaining, 0) - 1
@@ -204,6 +226,31 @@ export async function consumeOne(
           createdAt,
         },
       ],
+      marker
+        ? [
+            'update',
+            {
+              partitionKey,
+              rowKey: LATEST_CONSUME_MARKER_ROW_KEY,
+              kind: 'latest-consume-marker',
+              latestOpId: opId,
+              activeOpId: opId,
+              updatedAt: createdAt,
+            },
+            'Merge',
+            { etag: marker.etag },
+          ]
+        : [
+            'create',
+            {
+              partitionKey,
+              rowKey: LATEST_CONSUME_MARKER_ROW_KEY,
+              kind: 'latest-consume-marker',
+              latestOpId: opId,
+              activeOpId: opId,
+              updatedAt: createdAt,
+            },
+          ],
     ]
 
     try {
@@ -214,6 +261,14 @@ export async function consumeOne(
       if (isConflict(err)) {
         const winner = await readIdempotencyResult(ledger, partitionKey, opId)
         if (winner) return winner
+        // A pre-release partition has no marker. Concurrent first writers both
+        // try to create it; the loser must retry against the winner's ETag.
+        if (!marker && await readLatestConsumeMarker(ledger, partitionKey)) {
+          if (attempt === MAX_ATTEMPTS) throw new StorageConflictError(MAX_ATTEMPTS)
+          const jitter = Math.random() * BACKOFF_BASE_MS * 2 ** (attempt - 1)
+          await sleep(jitter)
+          continue
+        }
         // A conflict without a winning idempotency row means the transaction
         // row key collided, which only happens if the same opId is reused for
         // a different intent. Surfacing it is better than silently retrying.

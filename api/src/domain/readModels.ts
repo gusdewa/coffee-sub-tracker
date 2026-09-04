@@ -1,7 +1,15 @@
 import { odata, type TableClient } from '@azure/data-tables'
 
-import { ledgerPartitionKey, ALLOC_RANGE, TXN_RANGE } from '../storage/keys.js'
+import {
+  ledgerPartitionKey,
+  idempotencyRowKey,
+  ALLOC_RANGE,
+  TXN_RANGE,
+  LATEST_CONSUME_MARKER_ROW_KEY,
+} from '../storage/keys.js'
 import { listMembers, type Member, type RosterDeps } from '../storage/roster.js'
+import { isNotFound } from '../storage/tableClient.js'
+import { sameDayUndoDeadline } from './undoPolicy.js'
 
 /**
  * Read models.
@@ -24,6 +32,16 @@ export interface AllocationView {
 export interface MyCoffee {
   totalRemaining: number
   allocations: AllocationView[]
+  undoOffer: UndoOffer | null
+}
+
+export interface UndoOffer {
+  opId: string
+  allocRowKey: string
+  batchId: string
+  batchLabel: string
+  createdAt: string
+  undoExpiresAt: string
 }
 
 export interface HistoryItem {
@@ -40,6 +58,53 @@ export interface HistoryItem {
 
 export interface LedgerDeps {
   ledger: TableClient
+  now?: () => Date
+  undoWindowSeconds?: number
+  includeUndoOffer?: boolean
+}
+
+async function readEntity(
+  ledger: TableClient,
+  partitionKey: string,
+  rowKey: string,
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    return await ledger.getEntity(partitionKey, rowKey) as Record<string, unknown>
+  } catch (err) {
+    if (isNotFound(err)) return undefined
+    throw err
+  }
+}
+
+function undoOfferFromTransaction(
+  candidate: Record<string, unknown>,
+  memberId: string,
+  now: Date,
+  undoWindowSeconds: number,
+): UndoOffer | null {
+  const opId = String(candidate.opId ?? '')
+  const createdAt = new Date(String(candidate.createdAt))
+  const shortDeadline = candidate.undoExpiresAt
+    ? new Date(String(candidate.undoExpiresAt))
+    : new Date(createdAt.getTime() + undoWindowSeconds * 1000)
+  const deadline = sameDayUndoDeadline(createdAt, shortDeadline)
+  if (
+    candidate.type !== 'CONSUME'
+    || String(candidate.subjectMemberId ?? '') !== memberId
+    || !opId
+    || !Number.isFinite(createdAt.getTime())
+    || !Number.isFinite(deadline.getTime())
+    || now.getTime() > deadline.getTime()
+  ) return null
+
+  return {
+    opId,
+    allocRowKey: String(candidate.allocRowKey ?? ''),
+    batchId: String(candidate.batchId ?? ''),
+    batchLabel: String(candidate.batchLabel ?? ''),
+    createdAt: createdAt.toISOString(),
+    undoExpiresAt: deadline.toISOString(),
+  }
 }
 
 export async function getMyCoffee(deps: LedgerDeps, memberId: string): Promise<MyCoffee> {
@@ -65,9 +130,91 @@ export async function getMyCoffee(deps: LedgerDeps, memberId: string): Promise<M
   }
 
   allocations.sort((a, b) => a.effectiveAt.localeCompare(b.effectiveAt))
+
+  let undoOffer: UndoOffer | null = null
+  if (deps.includeUndoOffer !== false) {
+    const now = (deps.now ?? (() => new Date()))()
+    const undoWindowSeconds = deps.undoWindowSeconds ?? 90
+    const marker = await readEntity(deps.ledger, pk, LATEST_CONSUME_MARKER_ROW_KEY)
+
+    if (marker) {
+      // The marker is serialized in the same transaction as Drink/Put Back and
+      // is authoritative even when transaction row keys tie on time.
+      const activeOpId = String(marker.activeOpId ?? '')
+      if (activeOpId) {
+        const idem = await readEntity(deps.ledger, pk, idempotencyRowKey(activeOpId))
+        const txnRowKey = String(idem?.txnRowKey ?? '')
+        const txn = txnRowKey ? await readEntity(deps.ledger, pk, txnRowKey) : undefined
+        if (txn && String(txn.opId ?? '') === activeOpId) {
+          const candidate = undoOfferFromTransaction(txn, memberId, now, undoWindowSeconds)
+          // Point reads are not a snapshot. Revalidate the marker after
+          // resolving the transaction so concurrent Drink/Undo cannot publish
+          // an offer that was already superseded.
+          const currentMarker = await readEntity(
+            deps.ledger, pk, LATEST_CONSUME_MARKER_ROW_KEY,
+          )
+          if (
+            candidate
+            && String(currentMarker?.etag ?? '') === String(marker.etag ?? '')
+            && String(currentMarker?.activeOpId ?? '') === activeOpId
+          ) undoOffer = candidate
+        }
+      }
+    } else {
+      // Markerless partitions predate latest-consume serialization. Fall back
+      // to history only there, scanning the eligible slice so a reversal that
+      // shares its consume's millisecond is detected regardless of opId order.
+      const reversed = new Set<string>()
+      let latestConsume: Record<string, unknown> | undefined
+      let latestCreatedAt: string | undefined
+      let ambiguousLatest = false
+      const transactions = deps.ledger.listEntities({
+        queryOptions: {
+          filter: odata`PartitionKey eq ${pk} and RowKey ge ${TXN_RANGE.from} and RowKey lt ${TXN_RANGE.to}`,
+        },
+      })
+      for await (const e of transactions) {
+        const row = e as Record<string, unknown>
+        const createdAt = new Date(String(row.createdAt))
+        const shortDeadline = row.undoExpiresAt
+          ? new Date(String(row.undoExpiresAt))
+          : new Date(createdAt.getTime() + undoWindowSeconds * 1000)
+        if (
+          !Number.isFinite(createdAt.getTime())
+          || now.getTime() > sameDayUndoDeadline(createdAt, shortDeadline).getTime()
+        ) break
+        if (row.type === 'REVERSAL') reversed.add(String(row.reversesOpId ?? ''))
+        else if (row.type === 'CONSUME') {
+          const stamp = String(row.createdAt ?? '')
+          if (!latestConsume) {
+            latestConsume = row
+            latestCreatedAt = stamp
+          } else if (
+            stamp === latestCreatedAt
+            && String(row.opId ?? '') !== String(latestConsume.opId ?? '')
+          ) {
+            ambiguousLatest = true
+          }
+        }
+      }
+      if (
+        latestConsume
+        && !ambiguousLatest
+        && !reversed.has(String(latestConsume.opId ?? ''))
+        // A first Drink may have created the authoritative marker while this
+        // legacy scan was running. Publish history-derived state only if the
+        // partition is still genuinely markerless at the end of the read.
+        && !(await readEntity(deps.ledger, pk, LATEST_CONSUME_MARKER_ROW_KEY))
+      ) {
+        undoOffer = undoOfferFromTransaction(latestConsume, memberId, now, undoWindowSeconds)
+      }
+    }
+  }
+
   return {
     totalRemaining: allocations.reduce((s, a) => s + a.remaining, 0),
     allocations,
+    undoOffer,
   }
 }
 
@@ -150,7 +297,7 @@ export async function getAllBalances(
   )
 
   const balances = await mapWithLimit(members, 6, async (m) => {
-    const coffee = await getMyCoffee(deps, m.memberId)
+    const coffee = await getMyCoffee({ ...deps, includeUndoOffer: false }, m.memberId)
     return { memberId: m.memberId, displayName: m.displayName, remaining: coffee.totalRemaining }
   })
 

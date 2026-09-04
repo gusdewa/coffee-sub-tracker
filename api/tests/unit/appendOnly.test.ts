@@ -82,18 +82,19 @@ describe('append-only ledger (plan §10.5, acceptance 11)', () => {
     }
   })
 
-  test('every ledger transaction action targets an allocation, never a T| row', () => {
-    // The only 'update' actions in the domain layer must be allocation merges.
+  test('ledger updates target mutable allocations or the latest-consume marker, never a T| row', () => {
+    // Audit, sentinel, and idempotency rows remain append-only. Allocations and
+    // the fixed concurrency marker are the only mutable rows in the domain.
     const domain = files.filter((f) => f.includes('/domain/'))
     for (const file of domain) {
       const code = stripComments(readFileSync(file, 'utf8'))
       const updates = code.match(/\[\s*['"]update['"][\s\S]{0,400}?\]/g) ?? []
       for (const block of updates) {
-        const targetsAllocation =
-          /allocRowKey|adjustRowKey|target\.rowKey|row\.rowKey|rowKey: allocRowKey/.test(block)
+        const targetsMutableState =
+          /allocRowKey|adjustRowKey|target\.rowKey|row\.rowKey|rowKey: allocRowKey|LATEST_CONSUME_MARKER_ROW_KEY/.test(block)
         expect(
-          targetsAllocation,
-          `update action in ${file} must target an allocation row:\n${block}`,
+          targetsMutableState,
+          `update action in ${file} must target an allocation or marker row:\n${block}`,
         ).toBe(true)
         expect(
           /transactionRowKey|reversalSentinelRowKey|idempotencyRowKey/.test(block),
