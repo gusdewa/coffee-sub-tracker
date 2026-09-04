@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -16,6 +16,7 @@ import axe from 'axe-core'
  */
 
 const me = vi.fn()
+const drinkCall = vi.fn()
 const authState = { user: { uid: 'u1' }, loading: false }
 vi.mock('../../src/auth/useAuth', () => ({ useAuth: () => authState }))
 vi.mock('../../src/auth/firebase', () => ({
@@ -30,7 +31,7 @@ vi.mock('../../src/api/client', async () => {
     hasQaSession: () => false,
     api: {
       me: (...a: unknown[]) => me(...a),
-      drink: vi.fn(),
+      drink: (...a: unknown[]) => drinkCall(...a),
       undo: vi.fn(),
       history: vi.fn().mockResolvedValue({ items: [] }),
       balances: vi.fn().mockResolvedValue({ balances: [] }),
@@ -59,6 +60,7 @@ beforeEach(() => {
     totalRemaining: 3,
     allocations: [
       {
+        allocRowKey: 'A|SEPTEMBER',
         batchId: 'B1',
         batchLabel: 'September beans',
         granted: 5,
@@ -69,6 +71,8 @@ beforeEach(() => {
     ],
   })
 })
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('shell accessibility', () => {
   test('the signed-in shell has no violations', async () => {
@@ -104,5 +108,35 @@ describe('shell accessibility', () => {
       const name = (el.textContent ?? '').trim() || el.getAttribute('aria-label') || ''
       expect(name, `${el.tagName}.${el.className} needs a name`).not.toBe('')
     }
+  })
+
+  test('the success, card-level Put Back and duplicate warning have no violations', async () => {
+    const reserved = {
+      closed: false,
+      location: { assign: vi.fn() },
+      close: vi.fn(),
+      focus: vi.fn(),
+    } as unknown as Window
+    const open = vi.spyOn(window, 'open').mockReturnValue(reserved)
+    drinkCall.mockResolvedValue({
+      opId: 'op1', txnRowKey: 'T1', allocRowKey: 'A|SEPTEMBER', batchId: 'B1',
+      batchLabel: 'September beans', remainingTotal: 2, replayed: false,
+      createdAt: new Date().toISOString(),
+      undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+    })
+    const user = userEvent.setup()
+    const { container } = render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+    await user.click(await screen.findByRole('button', { name: 'Drink' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Drink 1')
+    expect(screen.getByRole('button', { name: 'Put back cup from September beans' })).toBeInTheDocument()
+    await waitFor(() => expect(reserved.location.assign).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    expect(await screen.findByRole('alertdialog', { name: /drink another/i })).toBeInTheDocument()
+    expect(await check(container)).toEqual([])
+    open.mockRestore()
   })
 })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCoffee, drink, loadMe, wasDrinkUndone } from '../state/coffee'
 import { api } from '../api/client'
 import { CoffeeCupIcon } from '../components/icons'
@@ -10,27 +10,32 @@ import {
   whatsAppShareUrl,
 } from '../sharing/whatsapp'
 
-/**
- * One tap, from anywhere.
- *
- * Drinking used to exist only on the My Coffee route, because the mutation was
- * that screen's local state. It is the thing the app is for, so it follows you.
- *
- * The label is always rendered. An unlabelled cup glyph is a guess, and the one
- * irreversible-feeling action in the app is a poor place to make people guess.
- */
+/** Resolve only after React's success state has had a browser paint opportunity. */
+function afterVisiblePaint(): Promise<void> {
+  if (typeof requestAnimationFrame !== 'function') {
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  return new Promise((resolve) => {
+    // One frame runs before paint. The second frame proves the committed
+    // success state had a paint opportunity before WhatsApp takes focus.
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
 export function DrinkFab() {
-  const { data, busy, offline, error } = useCoffee()
+  const { data, busy, offline, error, undo } = useCoffee()
   const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState(false)
+  const submitting = useRef(false)
+  const cancelButton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (confirming) cancelButton.current?.focus()
+  }, [confirming])
 
   const loading = data === null
   const empty = data !== null && data.totalRemaining === 0
-
-  /*
-   * Offline wins over an empty balance: if we cannot reach the server, we do
-   * not actually know the balance, so that is the more honest thing to say.
-   * README claimed this was already the behaviour; the button never checked.
-   */
   const help = offline
     ? "You're offline. Cups can't be counted right now."
     : loading
@@ -39,68 +44,81 @@ export function DrinkFab() {
         ? 'You have no cups remaining.'
         : null
 
-  const handleDrink = async () => {
+  const performDrink = async (confirmedAnother = false) => {
+    if (submitting.current) return
+    submitting.current = true
+    setDuplicateWarning(false)
+    setConfirming(false)
     setShareUrl(null)
-    // The reservation must happen inside the trusted click: once the mutation
-    // resolves, the user activation is spent and opening a context would be
-    // popup-blocked. The named context stays inert until the recap is real, so
-    // WhatsApp is never reached — and the PWA document never moves — unless
-    // the server has actually taken the cup.
+    // Reservation and idempotency-key creation occur only for a confirmed intent.
     const reserved = reserveWhatsAppHandoffWindow()
-    const result = await drink()
-    if (!result) {
-      reserved?.close()
-      return
-    }
-    if (!data) {
-      reserved?.close()
-      return
-    }
-
-    let balances
-    let balanceState: 'complete' | 'partial' = 'complete'
     try {
-      balances = (await api.balances()).balances
-    } catch {
-      // Consumption already succeeded. Fall back to the only current balance
-      // we can state truthfully, and explicitly disclose that the list is partial.
-      balanceState = 'partial'
-      balances = [
-        {
-          memberId: data.member.memberId,
-          displayName: data.member.displayName,
-          remaining: result.remainingTotal,
-        },
-      ]
-    }
+      const member = data?.member
+      const result = await drink({ confirmedAnother })
+      if (!result || !member) {
+        reserved?.close()
+        return
+      }
 
-    // Undo and the recap request run independently. Never hand off a message
-    // about a cup that was successfully put back while balances were loading.
-    if (wasDrinkUndone(result.opId)) {
-      reserved?.close()
+      // The exact success announcement is now committed. Yield through a frame
+      // and task boundary so it paints before any WhatsApp navigation.
+      await afterVisiblePaint()
+      if (wasDrinkUndone(result.opId)) {
+        reserved?.close()
+        return
+      }
+
+      let balances
+      let balanceState: 'complete' | 'partial' = 'complete'
+      try {
+        balances = (await api.balances()).balances
+      } catch {
+        balanceState = 'partial'
+        balances = [{
+          memberId: member.memberId,
+          displayName: member.displayName,
+          remaining: result.remainingTotal,
+        }]
+      }
+
+      if (wasDrinkUndone(result.opId)) {
+        reserved?.close()
+        return
+      }
+
+      const message = formatCoffeeRecap({
+        memberName: member.displayName,
+        batchLabel: result.batchLabel,
+        balances,
+        balanceState,
+      })
+      const url = whatsAppShareUrl(message)
+      if (!reserved?.navigate(url) && !navigateWhatsAppHandoff(message)) setShareUrl(url)
+    } finally {
+      submitting.current = false
+    }
+  }
+
+  const requestDrink = () => {
+    if (busy || submitting.current) {
+      setDuplicateWarning(true)
       return
     }
-
-    const message = formatCoffeeRecap({
-      memberName: data.member.displayName,
-      batchLabel: result.batchLabel,
-      balances,
-      balanceState,
-    })
-    const url = whatsAppShareUrl(message)
-    // Preferred path: the PWA keeps its document and undo offer; the reserved
-    // secondary context takes the jump. If the reservation was blocked, or the
-    // context vanished mid-flight, degrade to a same-context jump and then to
-    // a visible link. Only the navigation degrades — the cup was consumed
-    // exactly once on every path, so no fallback ever re-mutates.
-    if (!reserved?.navigate(url) && !navigateWhatsAppHandoff(message)) {
-      setShareUrl(url)
+    if (undo) {
+      setConfirming(true)
+      return
     }
+    void performDrink()
   }
 
   return (
     <>
       {error && <ErrorState error={error} onRetry={() => void loadMe()} inline />}
+      {duplicateWarning && (
+        <p className="drink-duplicate-warning" role="alert">
+          Drink is already being counted.
+        </p>
+      )}
       {shareUrl && (
         <a className="whatsapp-fallback" href={shareUrl} target="_blank" rel="noreferrer">
           Open WhatsApp
@@ -110,19 +128,45 @@ export function DrinkFab() {
         type="button"
         className="fab"
         data-tour="drink"
-        onClick={() => void handleDrink()}
-        disabled={busy || loading || empty || offline}
+        onClick={requestDrink}
+        disabled={loading || empty || offline}
+        aria-disabled={busy}
         aria-busy={busy}
         aria-describedby={help ? 'fab-help' : undefined}
       >
         <CoffeeCupIcon />
         <span className="fab__label">{busy ? 'Working…' : 'Drink'}</span>
       </button>
-      {/* Outside the button: help explains the state, it is not part of the name. */}
-      {help && (
-        <span id="fab-help" className="visually-hidden">
-          {help}
-        </span>
+      {help && <span id="fab-help" className="visually-hidden">{help}</span>}
+
+      {confirming && (
+        <div
+          className="drink-confirm__backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setConfirming(false)
+          }}
+        >
+          <section
+            className="drink-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="drink-confirm-title"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setConfirming(false)
+            }}
+          >
+            <h2 id="drink-confirm-title">Drink another?</h2>
+            <p>You just counted a drink. Count one more cup?</p>
+            <div className="drink-confirm__actions">
+              <button ref={cancelButton} type="button" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+              <button type="button" className="drink-confirm__accept" onClick={() => void performDrink(true)}>
+                Drink another
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </>
   )

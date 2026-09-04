@@ -11,7 +11,6 @@ import {
   AlreadyUndoneError,
   UndoWindowExpiredError,
   TransactionNotFoundError,
-  UNDO_WINDOW_SECONDS,
 } from '../../src/domain/undo.js'
 
 process.env.AZURE_TABLES_CONNECTION_STRING ??= azuriteConnectionString()
@@ -156,14 +155,29 @@ describe('Undo writes a reversal and never mutates history (plan §4.2)', () => 
   })
 
   test('refuses after the undo window closes', async () => {
-    const drink = await consumeOne({ ledger }, member, randomUUID())
-    const wayLater = () => new Date(Date.now() + (UNDO_WINDOW_SECONDS + 5) * 1000)
+    const createdAt = new Date('2026-09-04T10:00:00.000Z')
+    const drink = await consumeOne(
+      { ledger, now: () => createdAt, undoWindowSeconds: 12 }, member, randomUUID(),
+    )
+    const wayLater = () => new Date('2026-09-04T10:00:13.000Z')
 
     await expect(
-      undoConsume({ ledger, now: wayLater }, member, drink.opId, randomUUID()),
+      undoConsume({ ledger, now: wayLater, undoWindowSeconds: 12 }, member, drink.opId, randomUUID()),
     ).rejects.toBeInstanceOf(UndoWindowExpiredError)
 
     expect((await rows(member, ALLOC_RANGE))[0]!.remaining).toBe(4) // unchanged
+  })
+
+  test('accepts through the configured deadline', async () => {
+    const createdAt = new Date('2026-09-04T10:00:00.000Z')
+    const drink = await consumeOne(
+      { ledger, now: () => createdAt, undoWindowSeconds: 7 }, member, randomUUID(),
+    )
+    const result = await undoConsume(
+      { ledger, now: () => new Date('2026-09-04T10:00:07.000Z'), undoWindowSeconds: 7 },
+      member, drink.opId, randomUUID(),
+    )
+    expect(result.restoredAllocRowKey).toBe(drink.allocRowKey)
   })
 
   test('an unknown operation id is refused', async () => {

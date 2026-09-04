@@ -152,13 +152,22 @@ describe('idempotency — a retry is not a second drink (plan §4.1)', () => {
 
   test('replaying the same opId returns the original result and consumes nothing more', async () => {
     const opId = randomUUID()
-    const first = await consumeOne({ ledger }, member, opId)
-    const second = await consumeOne({ ledger }, member, opId)
+    const at = new Date('2026-09-04T10:00:00.000Z')
+    const first = await consumeOne({ ledger, now: () => at, undoWindowSeconds: 37 }, member, opId)
+    const second = await consumeOne(
+      { ledger, now: () => new Date('2026-09-04T11:00:00.000Z'), undoWindowSeconds: 999 },
+      member,
+      opId,
+    )
 
     expect(first.replayed).toBe(false)
     expect(second.replayed).toBe(true)
     expect(second.txnRowKey).toBe(first.txnRowKey)
     expect(second.remainingTotal).toBe(first.remainingTotal)
+    expect(first.createdAt).toBe('2026-09-04T10:00:00.000Z')
+    expect(first.undoExpiresAt).toBe('2026-09-04T10:00:37.000Z')
+    expect(second.createdAt).toBe(first.createdAt)
+    expect(second.undoExpiresAt).toBe(first.undoExpiresAt)
 
     expect(await transactions(member)).toHaveLength(1)
     const rows = await allocations(member)

@@ -131,30 +131,49 @@ test('the active destination changes as you move, and is not colour alone', asyn
   await shot(page, '21-shell-history-active', info.project.name)
 })
 
-test('a cup can be taken from any screen, and put back', async ({ page }, info) => {
+test('a cup can be taken once, warned before a second, and put back from its card', async ({ page }, info) => {
+  await page.clock.install()
   const api = await signedInShell(page, server.url)
   await page.locator('.dock a', { hasText: 'History' }).click()
   await expect(page.locator('.dock a.active')).toContainText('History')
 
   await page.locator('.fab').click()
-  await expect(page.locator('.snackbar')).toContainText('One cup from September beans.')
+  await expect(page.locator('.snackbar')).toHaveText('Drink 1')
   expect(api.drinks()).toBe(1)
   await expect.poll(() => api.whatsappHandoffs()).toHaveLength(1)
+  await expect.poll(() => api.handoffSuccessText()).toEqual(['Drink 1'])
   const message = decodeURIComponent(new URL(api.whatsappHandoffs()[0]!).searchParams.get('text')!)
   expect(message).toContain('Cart Coffee')
   expect(message).toContain('Dewa Wijaya drank 1 cup')
   expect(message).toContain('Dewa Wijaya: 4 cups')
   expect(message).toContain('Total remaining: 4 cups')
 
-  // The jump left through the reserved secondary context, so the PWA window
-  // keeps its document, its snackbar and its route — this is what the old
-  // same-context navigation destroyed on mobile Chromium.
-  expect(page.url()).toContain(server.url)
-  await expect(page.locator('.snackbar')).toBeVisible()
-  await shot(page, '22-shell-undo-offered', info.project.name)
+  // A second intent warns before it can reserve another popup or mutate.
+  await page.locator('.fab').click()
+  const warning = page.getByRole('alertdialog', { name: /drink another/i })
+  await expect(warning).toBeVisible()
+  await expect(warning.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  expect(api.drinks()).toBe(1)
+  expect(api.whatsappHandoffs()).toHaveLength(1)
+  await warning.getByRole('button', { name: 'Cancel' }).click()
 
-  await page.locator('.snackbar__action').click()
+  // The PWA document survives the handoff. The 10-second success is transient,
+  // but recovery stays on the exact personal card for the server-backed window.
+  expect(page.url()).toContain(server.url)
+  await page.locator('.dock a', { hasText: 'Mine' }).click()
+  const putBack = page.getByRole('button', { name: 'Put back cup from September beans' })
+  await expect(putBack).toBeVisible()
+  const target = (await putBack.boundingBox())!
+  expect(target.width).toBeGreaterThanOrEqual(44)
+  expect(target.height).toBeGreaterThanOrEqual(44)
+  await page.clock.fastForward(10_100)
   await expect(page.locator('.snackbar')).toHaveCount(0)
+  await expect(putBack).toBeVisible()
+  await shot(page, '22-shell-put-back-on-card', info.project.name)
+
+  await putBack.click()
+  await expect.poll(() => api.undos()).toBe(1)
+  await expect(putBack).toHaveCount(0)
 })
 
 test('the snackbar and the Drink action never overlap', async ({ page }) => {

@@ -196,7 +196,11 @@ export function createApp(deps: AppDeps = {}) {
     limit(limiters.drinks, (req) => req.ctx?.memberId ?? clientIp(req)),
     asyncRoute(async (req, res) => {
       const ctx = req.ctx! // subject is the caller, never the body
-      const result = await consumeOne({ ledger }, ctx.memberId, opIdOf(req))
+      const result = await consumeOne(
+        { ledger, undoWindowSeconds: config.undoWindowSeconds },
+        ctx.memberId,
+        opIdOf(req),
+      )
       if (result.replayed) res.setHeader('Idempotency-Replayed', 'true')
       res.json(result)
     }),
@@ -208,7 +212,7 @@ export function createApp(deps: AppDeps = {}) {
     asyncRoute(async (req, res) => {
       const ctx = req.ctx!
       const result = await undoConsume(
-        { ledger },
+        { ledger, undoWindowSeconds: config.undoWindowSeconds },
         ctx.memberId,
         String(req.params.opId),
         opIdOf(req),

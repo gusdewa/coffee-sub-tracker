@@ -114,6 +114,7 @@ describe('authentication boundary', () => {
     expect(res.body.member.memberId).toBe(ids.alice)
     expect(res.body.member.role).toBe('member')
     expect(res.body.totalRemaining).toBeGreaterThan(0)
+    expect(res.body.allocations[0].allocRowKey).toMatch(/^A\|/)
   })
 })
 
@@ -164,6 +165,9 @@ describe('idempotency and balance semantics over HTTP', () => {
 
     expect(second.headers['idempotency-replayed']).toBe('true')
     expect(second.body.txnRowKey).toBe(first.body.txnRowKey)
+    expect(first.body.createdAt).toEqual(expect.any(String))
+    expect(first.body.undoExpiresAt).toEqual(expect.any(String))
+    expect(second.body.undoExpiresAt).toBe(first.body.undoExpiresAt)
   })
 
   test('an Idempotency-Key with an illegal character is refused, not stored', async () => {

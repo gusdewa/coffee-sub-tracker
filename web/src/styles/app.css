@@ -153,7 +153,7 @@
 
 .card {
   position: relative;
-  padding: var(--gap-s) var(--gap-m);
+  padding: var(--gap-s) calc(var(--gap-m) + 44px) var(--gap-s) var(--gap-m);
   background: var(--paper-raised);
   border: 1px solid var(--paper-edge);
   border-radius: var(--radius-card);
@@ -232,6 +232,26 @@
   color: var(--punch-ink);
   font-weight: 600;
 }
+
+.card__put-back {
+  position: absolute;
+  right: var(--gap-xs);
+  bottom: var(--gap-xs);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--paper-edge);
+  border-radius: 50%;
+  color: var(--action);
+  cursor: pointer;
+}
+
+.card__put-back:hover:not(:disabled) { background: var(--punch-soft); }
+.card__put-back:disabled { opacity: 0.6; cursor: progress; }
 
 /* --- the action ---------------------------------------------------------- */
 

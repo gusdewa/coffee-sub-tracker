@@ -311,6 +311,10 @@
   cursor: not-allowed;
 }
 
+.fab[aria-disabled='true'] {
+  cursor: progress;
+}
+
 .fab:focus-visible {
   border-radius: var(--radius-stamp);
 }
@@ -370,6 +374,66 @@
 .snackbar__action:disabled {
   cursor: progress;
   opacity: 0.6;
+}
+
+.drink-duplicate-warning {
+  max-width: min(22rem, calc(100vw - 2 * var(--gap-m)));
+  margin: 0;
+  padding: var(--gap-s) var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--action);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+.drink-confirm__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: grid;
+  place-items: center;
+  padding: var(--gap-m);
+  background: rgb(0 0 0 / 45%);
+  pointer-events: auto;
+}
+
+.drink-confirm {
+  width: min(100%, 28rem);
+  padding: var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink);
+}
+
+.drink-confirm h2,
+.drink-confirm p { margin: 0 0 var(--gap-m); }
+
+.drink-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gap-s);
+}
+
+.drink-confirm__actions button {
+  min-height: 44px;
+  padding: 0 var(--gap-m);
+  border: 1px solid var(--action);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--action);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.drink-confirm__actions .drink-confirm__accept {
+  background: var(--action);
+  color: var(--on-action);
 }
 
 /*

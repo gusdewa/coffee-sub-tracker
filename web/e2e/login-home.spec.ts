@@ -222,7 +222,7 @@ test.describe('home', () => {
     await page.locator('.fab').click()
     await expect(page.locator('.snackbar')).toBeVisible()
 
-    for (const sel of ['.app-header__title', '.profile__trigger', '.fab', '.snackbar__action']) {
+    for (const sel of ['.app-header__title', '.profile__trigger', '.fab', '.snackbar']) {
       expect(await isReachable(page, sel), `${sel} is reachable`).toBe(true)
     }
     for (const link of await page.locator('.dock a').all()) {

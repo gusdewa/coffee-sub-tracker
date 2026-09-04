@@ -44,10 +44,17 @@ export async function signedInShell(
   page: Page,
   url: string,
   { role = 'member', remaining = 5, batches = 1, tourSeen = true }: Fixture = {},
-): Promise<{ drinks: () => number; whatsappHandoffs: () => string[] }> {
+): Promise<{
+  drinks: () => number
+  undos: () => number
+  whatsappHandoffs: () => string[]
+  handoffSuccessText: () => string[]
+}> {
   let drinkCount = 0
+  let undoCount = 0
   let total = remaining
   const whatsappHandoffs: string[] = []
+  const handoffSuccessText: string[] = []
 
   // A real browser proves the post-success jump is an actual wa.me navigation.
   // The jump happens in the reserved secondary context — a popup — so the
@@ -55,13 +62,15 @@ export async function signedInShell(
   // sees requests made from other pages. Abort at that boundary so the rest of
   // the shell suite can keep asserting local undo and layout state in the PWA
   // window, which never navigates away.
-  await page.context().route('https://wa.me/**', (route) => {
+  await page.context().route('https://wa.me/**', async (route) => {
     whatsappHandoffs.push(route.request().url())
+    handoffSuccessText.push((await page.locator('.snackbar').textContent().catch(() => '')) ?? '')
     return route.abort()
   })
 
   const allocations = (left: number) => [
     {
+      allocRowKey: 'A|SEPTEMBER',
       batchId: 'B1',
       batchLabel: 'September beans',
       granted: 8,
@@ -71,6 +80,7 @@ export async function signedInShell(
     },
     // Spent batches, oldest first, to give the list real length.
     ...Array.from({ length: Math.max(0, batches - 1) }, (_, i) => ({
+      allocRowKey: `A|BATCH-${i + 2}`,
       batchId: `B${i + 2}`,
       batchLabel: `Batch ${i + 2}`,
       granted: 8,
@@ -102,14 +112,17 @@ export async function signedInShell(
       return json({
         opId: `op-${drinkCount}`,
         txnRowKey: 'T',
-        allocRowKey: 'A',
+        allocRowKey: 'A|SEPTEMBER',
         batchId: 'B1',
         batchLabel: 'September beans',
         remainingTotal: total,
         replayed: false,
+        createdAt: new Date().toISOString(),
+        undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
       })
     }
     if (path.endsWith('/undo') && request.method() === 'POST') {
+      undoCount += 1
       total += 1
       return json({ remainingTotal: total })
     }
@@ -149,6 +162,8 @@ export async function signedInShell(
   await page.waitForSelector('.dock', { state: 'visible' })
   return {
     drinks: () => drinkCount,
+    undos: () => undoCount,
     whatsappHandoffs: () => [...whatsappHandoffs],
+    handoffSuccessText: () => [...handoffSuccessText],
   }
 }
