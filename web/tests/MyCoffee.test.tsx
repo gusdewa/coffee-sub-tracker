@@ -1,11 +1,20 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 
 const me = vi.fn()
+const drinkCall = vi.fn()
+const undoCall = vi.fn()
 
 vi.mock('../src/api/client', async () => {
   const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client')
-  return { ...actual, api: { me: (...a: unknown[]) => me(...a) } }
+  return {
+    ...actual,
+    api: {
+      me: (...a: unknown[]) => me(...a),
+      drink: (...a: unknown[]) => drinkCall(...a),
+      undo: (...a: unknown[]) => undoCall(...a),
+    },
+  }
 })
 
 const store = await import('../src/state/coffee')
@@ -23,6 +32,7 @@ const withBalance = (totalRemaining: number) => ({
           consumed: 5 - totalRemaining,
           remaining: totalRemaining,
           effectiveAt: '2026-09-01T00:00:00.000Z',
+          allocRowKey: 'A|SEPTEMBER',
         },
       ]
     : [],
@@ -32,6 +42,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   store.resetCoffeeStore()
 })
+
+afterEach(() => vi.useRealTimers())
 
 /*
  * Drinking, undo and the double-tap guard moved to the shell with the action
@@ -65,6 +77,87 @@ describe('My Coffee', () => {
     expect(await screen.findByText('next')).toBeInTheDocument()
   })
 
+  test('keeps the final spent card visible and puts undo only on the consumed allocation', async () => {
+    const data = withBalance(1)
+    me.mockResolvedValue(data)
+    render(<MyCoffee />)
+    await screen.findByText('1')
+    drinkCall.mockResolvedValue({
+      opId: 'op-final', allocRowKey: 'A|SEPTEMBER', batchLabel: 'September beans',
+      remainingTotal: 0, createdAt: new Date().toISOString(),
+      undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+    })
+    me.mockResolvedValue({
+      ...data,
+      totalRemaining: 0,
+      allocations: [{ ...data.allocations[0], consumed: 5, remaining: 0 }],
+    })
+    await act(async () => void (await store.drink()))
+    expect(await screen.findByRole('button', { name: 'Put back cup from September beans' })).toBeInTheDocument()
+    expect(screen.getByText('September beans').closest('article')).toBeInTheDocument()
+  })
+
+  test('keeps Put Back after the 10-second success notice and restores exactly once', async () => {
+    const data = withBalance(2)
+    me.mockResolvedValue(data)
+    render(<MyCoffee />)
+    await screen.findByText('2')
+    vi.useFakeTimers()
+    drinkCall.mockResolvedValue({
+      opId: 'op1', allocRowKey: 'A|SEPTEMBER', batchLabel: 'September beans',
+      remainingTotal: 1, createdAt: new Date().toISOString(),
+      undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+    })
+    undoCall.mockResolvedValue({ remainingTotal: 2 })
+    await act(async () => void (await store.drink()))
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000))
+    const putBack = screen.getByRole('button', { name: 'Put back cup from September beans' })
+    expect(putBack).toHaveAttribute('title', 'Put back cup from September beans')
+    expect(putBack).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(putBack)
+      await Promise.resolve()
+    })
+    expect(undoCall).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: /put back cup/i })).toBeNull()
+  })
+
+  test('shows Put Back only on the exact consumed allocation, not the new FIFO card', async () => {
+    const data = withBalance(2)
+    data.allocations = [
+      { ...data.allocations[0]!, remaining: 1, consumed: 4 },
+      {
+        allocRowKey: 'A|OCTOBER', batchId: 'B2', batchLabel: 'October beans',
+        granted: 1, consumed: 0, remaining: 1, effectiveAt: '2026-10-01T00:00:00.000Z',
+      },
+    ]
+    me.mockResolvedValue(data)
+    render(<MyCoffee />)
+    await screen.findByText('2')
+    drinkCall.mockResolvedValue({
+      opId: 'op1', allocRowKey: 'A|SEPTEMBER', batchLabel: 'September beans',
+      remainingTotal: 1, createdAt: new Date().toISOString(),
+      undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+    })
+    me.mockResolvedValue({
+      ...data,
+      totalRemaining: 1,
+      allocations: [
+        { ...data.allocations[0]!, remaining: 0, consumed: 5 },
+        data.allocations[1]!,
+      ],
+    })
+    await act(async () => void (await store.drink()))
+
+    const september = screen.getByRole('heading', { name: 'September beans' }).closest('article')!
+    const october = screen.getByRole('heading', { name: 'October beans' }).closest('article')!
+    expect(within(september).getByRole('button', { name: /put back cup/i })).toBeInTheDocument()
+    expect(within(october).queryByRole('button', { name: /put back cup/i })).toBeNull()
+    expect(within(october).getByText('next')).toBeInTheDocument()
+  })
+
   test('the next marker counts over the cards actually rendered', async () => {
     // A granted:0 batch ahead of the FIFO head used to slide the index and the
     // rendered list apart, putting the badge on the wrong card.
@@ -73,6 +166,7 @@ describe('My Coffee', () => {
       totalRemaining: 2,
       allocations: [
         {
+          allocRowKey: 'A|EMPTY',
           batchId: 'B0',
           batchLabel: 'Empty batch',
           granted: 0,
@@ -81,6 +175,7 @@ describe('My Coffee', () => {
           effectiveAt: '2026-08-01T00:00:00.000Z',
         },
         {
+          allocRowKey: 'A|SEPTEMBER',
           batchId: 'B1',
           batchLabel: 'September beans',
           granted: 4,

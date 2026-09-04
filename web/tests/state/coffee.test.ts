@@ -33,8 +33,19 @@ const balance = (totalRemaining: number) => ({
       consumed: 5 - totalRemaining,
       remaining: totalRemaining,
       effectiveAt: '2026-09-01T00:00:00.000Z',
+      allocRowKey: 'A|SEPTEMBER',
     },
   ],
+})
+
+const drinkResult = (overrides: Record<string, unknown> = {}) => ({
+  opId: 'op1',
+  batchLabel: 'September beans',
+  allocRowKey: 'A|SEPTEMBER',
+  remainingTotal: 4,
+  createdAt: new Date(Date.now()).toISOString(),
+  undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+  ...overrides,
 })
 
 beforeEach(() => {
@@ -68,7 +79,7 @@ describe('the coffee store', () => {
     me
       .mockImplementationOnce(() => new Promise((resolve) => (releaseStale = resolve)))
       .mockImplementationOnce(() => new Promise((resolve) => (releaseFresh = resolve)))
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    drinkCall.mockResolvedValue(drinkResult({ batchLabel: 'B' }))
 
     const staleRefresh = store.loadMe()
     await store.drink()
@@ -82,11 +93,7 @@ describe('the coffee store', () => {
   })
 
   test('a drink taken anywhere leaves an undo the whole app can see', async () => {
-    drinkCall.mockResolvedValue({
-      opId: 'op1',
-      batchLabel: 'September beans',
-      remainingTotal: 4,
-    })
+    drinkCall.mockResolvedValue(drinkResult())
     await store.loadMe()
     // The refetch after a drink is authoritative, so the stub has to move too.
     me.mockResolvedValue(balance(4))
@@ -101,41 +108,68 @@ describe('the coffee store', () => {
     expect(store.getCoffeeState().data?.totalRemaining).toBe(4)
   })
 
-  test('a second drink does not have its undo cut short by the first timer', async () => {
+  test('requires confirmation at the mutation boundary and gives a confirmed drink its own deadline', async () => {
     vi.useFakeTimers()
+    const firstDeadline = new Date(Date.now() + 90_000).toISOString()
+    const secondDeadline = new Date(Date.now() + 120_000).toISOString()
     drinkCall
-      .mockResolvedValueOnce({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
-      .mockResolvedValueOnce({ opId: 'op2', batchLabel: 'B', remainingTotal: 3 })
+      .mockResolvedValueOnce(drinkResult({ opId: 'op1', batchLabel: 'B', undoExpiresAt: firstDeadline }))
+      .mockResolvedValueOnce(drinkResult({ opId: 'op2', batchLabel: 'B', remainingTotal: 3, undoExpiresAt: secondDeadline }))
     await store.loadMe()
 
     await store.drink()
     await vi.advanceTimersByTimeAsync(5_000)
     await store.drink()
+    expect(drinkCall).toHaveBeenCalledTimes(1)
+
+    await store.drink({ confirmedAnother: true })
+    expect(drinkCall).toHaveBeenCalledTimes(2)
     expect(store.getCoffeeState().undo?.opId).toBe('op2')
 
-    // Past the first drink's 10-second display expiry, the second offer remains.
-    await vi.advanceTimersByTimeAsync(6_000)
+    // The old deadline cannot clear the newer offer.
+    await vi.advanceTimersByTimeAsync(85_000)
     expect(store.getCoffeeState().undo?.opId).toBe('op2')
-
-    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(30_000)
     expect(store.getCoffeeState().undo).toBeNull()
   })
 
-  test('the Put it back offer expires on its own after 10 seconds', async () => {
+  test('the 10 second success notice expires without discarding server-backed undo eligibility', async () => {
     vi.useFakeTimers()
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    drinkCall.mockResolvedValue({
+      opId: 'op1', batchLabel: 'B', allocRowKey: 'A|SEPTEMBER', remainingTotal: 4,
+      createdAt: new Date().toISOString(), undoExpiresAt: deadline,
+    })
     await store.loadMe()
     await store.drink()
 
     await vi.advanceTimersByTimeAsync(9_000)
-    expect(store.getCoffeeState().undo).not.toBeNull()
+    expect(store.getCoffeeState().notice).not.toBeNull()
     await vi.advanceTimersByTimeAsync(1_000)
+    expect(store.getCoffeeState().notice).toBeNull()
+    expect(store.getCoffeeState().undo).toMatchObject({
+      opId: 'op1', allocRowKey: 'A|SEPTEMBER', undoExpiresAt: deadline,
+    })
+  })
+
+  test('authoritative expiry removes the card offer while a transient undo failure retains it', async () => {
+    drinkCall.mockResolvedValue({
+      opId: 'op1', batchLabel: 'B', allocRowKey: 'A|SEPTEMBER', remainingTotal: 4,
+      createdAt: new Date().toISOString(), undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+    })
+    await store.loadMe()
+    await store.drink()
+    undoCall.mockRejectedValueOnce(new Error('temporary'))
+    await store.undoDrink()
+    expect(store.getCoffeeState().undo?.opId).toBe('op1')
+    undoCall.mockRejectedValueOnce(new ApiError('UNDO_WINDOW_EXPIRED', 'expired', 409))
+    await store.undoDrink()
     expect(store.getCoffeeState().undo).toBeNull()
   })
 
   test('reset cleans up the pending Put it back expiry timer', async () => {
     vi.useFakeTimers()
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    drinkCall.mockResolvedValue(drinkResult({ batchLabel: 'B' }))
     await store.loadMe()
     await store.drink()
     expect(vi.getTimerCount()).toBeGreaterThan(0)
@@ -153,7 +187,7 @@ describe('the coffee store', () => {
     const second = store.drink()
     expect(drinkCall).toHaveBeenCalledTimes(1)
 
-    release({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    release(drinkResult({ batchLabel: 'B' }))
     await Promise.all([first, second])
     expect(drinkCall).toHaveBeenCalledTimes(1)
     expect(drinkCall.mock.calls[0]![0]).toEqual(expect.any(String))
@@ -172,7 +206,7 @@ describe('the coffee store', () => {
   })
 
   test('undo puts the cup back and clears the window', async () => {
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    drinkCall.mockResolvedValue(drinkResult({ batchLabel: 'B' }))
     undoCall.mockResolvedValue({ remainingTotal: 5 })
     await store.loadMe()
     await store.drink()
@@ -180,6 +214,7 @@ describe('the coffee store', () => {
 
     expect(undoCall).toHaveBeenCalledWith('op1', expect.any(String))
     expect(store.getCoffeeState().undo).toBeNull()
+    expect(store.getCoffeeState().notice).toBeNull()
   })
 
   test('an unbound account surfaces as an error rather than being swallowed', async () => {
@@ -201,7 +236,7 @@ describe('the coffee store', () => {
   })
 
   test('revision bumps once per successful mutation so sibling screens reload', async () => {
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    drinkCall.mockResolvedValue(drinkResult({ batchLabel: 'B' }))
     undoCall.mockResolvedValue({ remainingTotal: 5 })
     await store.loadMe()
 

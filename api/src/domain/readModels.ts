@@ -12,6 +12,7 @@ import { listMembers, type Member, type RosterDeps } from '../storage/roster.js'
  */
 
 export interface AllocationView {
+  allocRowKey: string
   batchId: string
   batchLabel: string
   granted: number
@@ -53,6 +54,7 @@ export async function getMyCoffee(deps: LedgerDeps, memberId: string): Promise<M
   for await (const e of iter) {
     const r = e as Record<string, unknown>
     allocations.push({
+      allocRowKey: String(r.rowKey),
       batchId: String(r.batchId ?? ''),
       batchLabel: String(r.batchLabel ?? ''),
       granted: Number(r.granted ?? 0),

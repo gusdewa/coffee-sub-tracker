@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useCoffee, loadMe } from '../state/coffee'
+import { useCoffee, loadMe, undoDrink } from '../state/coffee'
 import { PunchCard } from '../components/PunchCard'
 import { Skeleton } from '../components/Skeleton'
 import { ErrorState } from '../components/ErrorState'
@@ -19,7 +19,7 @@ import { ErrorState } from '../components/ErrorState'
  * shell read as one object: a card you punch.
  */
 export function MyCoffee() {
-  const { data, error } = useCoffee()
+  const { data, error, undo, busy } = useCoffee()
 
   useEffect(() => {
     if (!data) void loadMe()
@@ -62,12 +62,21 @@ export function MyCoffee() {
         )}
       </section>
 
-      {!empty && cards.length > 0 && (
+      {cards.length > 0 && (
         <section className="home__cards">
           <h2 className="home__heading">Your cards</h2>
           <div className="cards">
             {cards.map((a, i) => (
-              <PunchCard key={a.batchId + a.effectiveAt} allocation={a} isNext={i === nextIndex} />
+              <PunchCard
+                key={a.allocRowKey || a.batchId}
+                allocation={a}
+                isNext={i === nextIndex}
+                canPutBack={Boolean(undo && (undo.allocRowKey
+                  ? undo.allocRowKey === a.allocRowKey
+                  : undo.batchId === a.batchId))}
+                putBackBusy={busy}
+                onPutBack={() => void undoDrink()}
+              />
             ))}
           </div>
         </section>

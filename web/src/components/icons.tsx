@@ -105,6 +105,17 @@ export function CoffeeCupIcon({ size = 22 }: IconProps) {
   )
 }
 
+/** A cup returning to the card; used by the icon-only card undo action. */
+export function PutBackIcon({ size = 22 }: IconProps) {
+  return (
+    <svg {...base} width={size} height={size}>
+      <path d="M8.2 8.2H17v3.1a4.4 4.4 0 0 1-8.8 0V8.2Z" />
+      <path d="M17 9.2h1.2a1.9 1.9 0 0 1 0 3.8H17M7 17.8h11" />
+      <path d="M8.1 4.3H3.7m0 0 2.2-2.1M3.7 4.3l2.2 2.1" />
+    </svg>
+  )
+}
+
 export function ManageIcon({ size = 18 }: IconProps) {
   return (
     <svg {...base} width={size} height={size}>

@@ -58,8 +58,11 @@ afterEach(() => vi.useRealTimers())
 describe('the Drink action', () => {
   const successfulDrink = {
     opId: 'op1',
+    allocRowKey: 'A|SEPTEMBER',
     batchLabel: 'September beans',
     remainingTotal: 4,
+    createdAt: '2026-09-04T10:00:00.000Z',
+    undoExpiresAt: '2099-09-04T10:01:30.000Z',
   }
 
   /*
@@ -106,6 +109,7 @@ describe('the Drink action', () => {
     await act(async () => release(successfulDrink))
     await waitFor(() => expect(balancesCall).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('status')).toHaveTextContent(/^Drink 1$/)
 
     expect(win.close).not.toHaveBeenCalled()
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled()
@@ -118,6 +122,32 @@ describe('the Drink action', () => {
     expect(message).toContain('Ayu: 2 cups')
     expect(message.indexOf('Dewa:')).toBeLessThan(message.indexOf('Ayu:'))
     expect(message).toContain('Total remaining: 6 cups')
+  })
+
+  test('warns after success and reserves neither a key nor WhatsApp until explicit confirmation', async () => {
+    const win = reservedWindow()
+    drinkCall
+      .mockResolvedValueOnce(successfulDrink)
+      .mockResolvedValueOnce({ ...successfulDrink, opId: 'op2', remainingTotal: 3 })
+    await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
+    mount()
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
+    vi.mocked(window.open).mockClear()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    expect(screen.getByRole('alertdialog', { name: /drink another/i })).toBeInTheDocument()
+    expect(drinkCall).toHaveBeenCalledTimes(1)
+    expect(window.open).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    await user.dblClick(screen.getByRole('button', { name: 'Drink another' }))
+    await waitFor(() => expect(drinkCall).toHaveBeenCalledTimes(2))
+    expect(drinkCall).toHaveBeenCalledTimes(2)
+    expect(window.open).toHaveBeenCalledTimes(1)
   })
 
   test('jumps with a truthful self-only recap when balances fail', async () => {
@@ -204,7 +234,8 @@ describe('the Drink action', () => {
     mount()
 
     await user.click(screen.getByRole('button', { name: 'Drink' }))
-    await user.click(await screen.findByRole('button', { name: 'Put it back' }))
+    await waitFor(() => expect(store.getCoffeeState().undo?.opId).toBe('op1'))
+    await act(async () => void (await store.undoDrink()))
     await waitFor(() => expect(undoCall).toHaveBeenCalledTimes(1))
     await act(async () =>
       releaseBalances({ balances: [{ memberId: 'M1', displayName: 'Dewa', remaining: 4 }] }),
@@ -247,15 +278,15 @@ describe('the Drink action', () => {
 
     await user.click(screen.getByRole('button', { name: 'Drink' }))
     const working = await screen.findByRole('button', { name: 'Working…' })
-    expect(working).toBeDisabled()
+    expect(working).toBeEnabled()
+    expect(working).toHaveAttribute('aria-disabled', 'true')
     expect(working).toHaveAttribute('aria-busy', 'true')
     expect(window.open).toHaveBeenCalledTimes(1)
     await user.click(working)
     expect(drinkCall).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('Drink is already being counted.')
 
-    await act(async () => {
-      release({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
-    })
+    await act(async () => release(successfulDrink))
     await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
   })
 
@@ -303,44 +334,38 @@ describe('the Drink action', () => {
   })
 })
 
-describe('the undo snackbar', () => {
-  test('offers the undo wherever you happen to be, naming the card', async () => {
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'September beans', remainingTotal: 4 })
+describe('the transient success notice', () => {
+  test('announces the exact success copy wherever you happen to be', async () => {
+    drinkCall.mockResolvedValue({
+      opId: 'op1', allocRowKey: 'A|SEPTEMBER', batchLabel: 'September beans', remainingTotal: 4,
+      createdAt: '2026-09-04T10:00:00.000Z', undoExpiresAt: '2099-09-04T10:01:30.000Z',
+    })
     await act(async () => void (await store.loadMe()))
     const user = userEvent.setup()
     mount()
     await user.click(screen.getByRole('button', { name: 'Drink' }))
 
     const bar = await screen.findByRole('status')
-    expect(bar).toHaveTextContent('One cup from September beans.')
+    expect(bar).toHaveTextContent(/^Drink 1$/)
     expect(bar).toHaveAttribute('aria-live', 'polite')
   })
 
-  test('puts the cup back', async () => {
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
-    undoCall.mockResolvedValue({ remainingTotal: 5 })
-    await act(async () => void (await store.loadMe()))
-    const user = userEvent.setup()
-    mount()
-    await user.click(screen.getByRole('button', { name: 'Drink' }))
-    await user.click(await screen.findByRole('button', { name: 'Put it back' }))
-
-    await waitFor(() => expect(undoCall).toHaveBeenCalledWith('op1', expect.any(String)))
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
-  })
-
-  test('automatically removes Put it back after 10 seconds', async () => {
+  test('expires after 10 seconds without discarding card-level undo eligibility', async () => {
     vi.useFakeTimers()
-    drinkCall.mockResolvedValue({ opId: 'op1', batchLabel: 'B', remainingTotal: 4 })
+    drinkCall.mockResolvedValue({
+      opId: 'op1', allocRowKey: 'A|SEPTEMBER', batchLabel: 'B', remainingTotal: 4,
+      createdAt: new Date().toISOString(), undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+    })
     await act(async () => void (await store.loadMe()))
     mount()
     await act(async () => void store.drink())
 
-    expect(screen.getByRole('button', { name: 'Put it back' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Drink 1')
     await act(async () => vi.advanceTimersByTimeAsync(9_999))
-    expect(screen.getByRole('button', { name: 'Put it back' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
     await act(async () => vi.advanceTimersByTimeAsync(1))
-    expect(screen.queryByRole('button', { name: 'Put it back' })).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(store.getCoffeeState().undo?.opId).toBe('op1')
   })
 
   test('is absent until a cup is actually taken', async () => {

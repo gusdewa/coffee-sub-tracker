@@ -89,6 +89,7 @@ async function request<T>(
 }
 
 export interface AllocationView {
+  allocRowKey: string
   batchId: string
   batchLabel: string
   granted: number
@@ -110,6 +111,8 @@ export interface DrinkResponse {
   batchId: string
   batchLabel: string
   remainingTotal: number
+  createdAt: string
+  undoExpiresAt: string
   replayed: boolean
 }
 

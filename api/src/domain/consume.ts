@@ -53,6 +53,8 @@ export interface ConsumeDeps {
   ledger: TableClient
   /** Injectable for deterministic tests. */
   now?: () => Date
+  /** Supplied by startup config; never read from the environment here. */
+  undoWindowSeconds?: number
 }
 
 export interface ConsumeResult {
@@ -62,6 +64,8 @@ export interface ConsumeResult {
   batchId: string
   batchLabel: string
   remainingTotal: number
+  createdAt: string
+  undoExpiresAt: string
   replayed: boolean
 }
 
@@ -138,6 +142,9 @@ export async function consumeOne(
     if (!target) throw new NoBalanceError()
 
     const createdAt = now()
+    const undoExpiresAt = new Date(
+      createdAt.getTime() + (deps.undoWindowSeconds ?? 90) * 1000,
+    )
     const txnRowKey = transactionRowKey(createdAt, opId)
     const remainingTotal = rows.reduce((sum, r) => sum + r.remaining, 0) - 1
 
@@ -148,6 +155,8 @@ export async function consumeOne(
       batchId: target.batchId,
       batchLabel: target.batchLabel,
       remainingTotal,
+      createdAt: createdAt.toISOString(),
+      undoExpiresAt: undoExpiresAt.toISOString(),
       replayed: false,
     }
 
@@ -180,6 +189,7 @@ export async function consumeOne(
           actorMemberId: memberId,
           subjectMemberId: memberId,
           createdAt,
+          undoExpiresAt,
         },
       ],
       [

@@ -176,7 +176,7 @@ describe('the signed-in shell', () => {
     // Without the revision subscription this screen keeps showing a ledger the
     // FAB has already added to.
     await waitFor(() => expect(historyCall).toHaveBeenCalledTimes(2))
-    expect(await screen.findByRole('status')).toHaveTextContent('One cup from September beans.')
+    expect(await screen.findByRole('status')).toHaveTextContent('Drink 1')
   })
 
   test('the Drink action is reachable from every destination', async () => {

@@ -26,7 +26,6 @@ import { StorageConflictError, MAX_ATTEMPTS } from './consume.js'
  *    a newer batch has arrived in the meantime.
  */
 
-export const UNDO_WINDOW_SECONDS = Number(process.env.UNDO_WINDOW_SECONDS ?? 90)
 
 export class AlreadyUndoneError extends Error {
   readonly code = 'ALREADY_UNDONE'
@@ -63,6 +62,8 @@ export class NotReversibleError extends Error {
 export interface UndoDeps {
   ledger: TableClient
   now?: () => Date
+  /** Used only for legacy transactions which predate persisted deadlines. */
+  undoWindowSeconds?: number
 }
 
 export interface UndoResult {
@@ -130,8 +131,10 @@ export async function undoConsume(
   if (String(txn.subjectMemberId) !== memberId) throw new TransactionNotFoundError()
 
   const createdAt = new Date(String(txn.createdAt))
-  const ageSeconds = (now().getTime() - createdAt.getTime()) / 1000
-  if (ageSeconds > UNDO_WINDOW_SECONDS) throw new UndoWindowExpiredError()
+  const deadline = txn.undoExpiresAt
+    ? new Date(String(txn.undoExpiresAt))
+    : new Date(createdAt.getTime() + (deps.undoWindowSeconds ?? 90) * 1000)
+  if (now().getTime() > deadline.getTime()) throw new UndoWindowExpiredError()
 
   const allocRowKey = String(txn.allocRowKey)
 
