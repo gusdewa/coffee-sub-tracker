@@ -138,11 +138,13 @@ export function App() {
         <>
           {/*
             One fixed row above the dock. The whole row is pointer-events:none
-            so only the controls are tappable.
+            so only the controls are tappable. A labelled landmark, because it
+            sits outside <main> and still carries text (the Drink help and
+            status lines) that must not float outside every landmark.
           */}
-          <div className="stack">
+          <aside className="stack" aria-label="Drink">
             <DrinkFab />
-          </div>
+          </aside>
           <Dock />
           {/*
             Rendered into document.body as a modal <dialog>, so where it sits

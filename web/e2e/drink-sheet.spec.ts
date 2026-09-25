@@ -303,7 +303,7 @@ test.describe('post-Drink summary sheet', () => {
     api.releaseDrink()
     let sheet = drinkSheet(page)
     await expect(sheet).toBeVisible()
-    await expect(sheet).toContainText(/\b4\s*cups left now/)
+    await expect(sheet).toContainText(/(?<!\d)4\s*cups left now/)
 
     // Done adds nothing.
     await sheet.getByRole('button', { name: 'Done' }).click()
@@ -325,7 +325,7 @@ test.describe('post-Drink summary sheet', () => {
     await expect.poll(() => api.drinks()).toBe(2)
     sheet = drinkSheet(page)
     await expect(sheet).toBeVisible()
-    await expect(sheet).toContainText(/\b3\s*cups left now/)
+    await expect(sheet).toContainText(/(?<!\d)3\s*cups left now/)
 
     // Escape adds nothing.
     await page.keyboard.press('Escape')
@@ -368,7 +368,7 @@ test.describe('post-Drink summary sheet', () => {
     const api = await signedInShell(page, server.url)
     const sheet = await drinkAndOpen(page)
     await settleSheet(page)
-    await expect(sheet).toContainText(/\b4\s*cups left now/)
+    await expect(sheet).toContainText(/(?<!\d)4\s*cups left now/)
     await expect(sheet.getByRole('link', { name: SHARE })).toBeVisible()
 
     await sheet.getByRole('button', { name: /put back/i }).click()
@@ -376,7 +376,7 @@ test.describe('post-Drink summary sheet', () => {
     const after = putBackSheet(page)
     await expect(after).toBeVisible()
     await expect(after.getByRole('heading', { name: 'Cup put back' })).toBeFocused()
-    await expect(after).toContainText(/\b5\s*cups left/)
+    await expect(after).toContainText(/(?<!\d)5\s*cups left/)
     await expect(after.getByRole('link', { name: SHARE })).toHaveCount(0)
     await expect(after.getByRole('button', { name: /put back/i })).toHaveCount(0)
     expect(page.url()).toContain(server.url)
@@ -393,29 +393,36 @@ test.describe('post-Drink summary sheet', () => {
     expect(api.undos()).toBe(1)
   })
 
-  test('E8 after a real reload the card keeps its Put Back, the sheet stays gone, and one undo restores', async ({
-    page,
-  }) => {
-    const api = await signedInShell(page, server.url)
-    await drinkAndOpen(page)
-    await expect(page.locator('.slip__number')).toHaveText('4')
+  test.describe('E8 reload', () => {
+    // After a real reload the page's service worker controls it, and page.route
+    // never sees requests the worker makes. Recovery comes from /api/me, not
+    // the worker, so keep the worker out of this one test.
+    test.use({ serviceWorkers: 'block' })
 
-    // Reload with the sheet still open: the receipt is memory, the offer is the server's.
-    await page.reload()
-    await reenterAfterReload(page, server.url)
-    const putBack = page.getByRole('button', { name: CARD_PUT_BACK })
-    await expect(putBack).toBeVisible()
-    await expect(page.locator('.slip__number')).toHaveText('4')
-    await page.waitForTimeout(500)
-    await expect(anySheet(page), 'the sheet does not come back after a reload').toHaveCount(0)
+    test('E8 after a real reload the card keeps its Put Back, the sheet stays gone, and one undo restores', async ({
+      page,
+    }) => {
+      const api = await signedInShell(page, server.url)
+      await drinkAndOpen(page)
+      await expect(page.locator('.slip__number')).toHaveText('4')
 
-    await putBack.click()
-    await expect.poll(() => api.undos()).toBe(1)
-    await expect(page.locator('.slip__number')).toHaveText('5')
-    await expect(putBack).toHaveCount(0)
-    await expect(anySheet(page)).toHaveCount(0)
-    expect(api.drinks()).toBe(1)
-    expect(api.whatsappRequests()).toBe(0)
+      // Reload with the sheet still open: the receipt is memory, the offer is the server's.
+      await page.reload()
+      await reenterAfterReload(page, server.url)
+      const putBack = page.getByRole('button', { name: CARD_PUT_BACK })
+      await expect(putBack).toBeVisible()
+      await expect(page.locator('.slip__number')).toHaveText('4')
+      await page.waitForTimeout(500)
+      await expect(anySheet(page), 'the sheet does not come back after a reload').toHaveCount(0)
+
+      await putBack.click()
+      await expect.poll(() => api.undos()).toBe(1)
+      await expect(page.locator('.slip__number')).toHaveText('5')
+      await expect(putBack).toHaveCount(0)
+      await expect(anySheet(page)).toHaveCount(0)
+      expect(api.drinks()).toBe(1)
+      expect(api.whatsappRequests()).toBe(0)
+    })
   })
 
   test('E9 focus: the heading on open, and back to Drink after Escape', async ({ page }) => {
