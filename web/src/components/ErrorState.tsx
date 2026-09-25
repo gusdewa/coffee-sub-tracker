@@ -1,4 +1,4 @@
-import { ApiError, OfflineError } from '../api/client'
+import { ApiError, OfflineError, TimeoutError, UnconfirmedDrinkError } from '../api/client'
 
 /**
  * Errors say what happened and what to do about it. They do not apologise and
@@ -7,6 +7,12 @@ import { ApiError, OfflineError } from '../api/client'
  */
 function explain(error: Error): string {
   if (error instanceof OfflineError) return 'No connection. Your cup was not counted.'
+  // The Drink may have committed before the answer was lost; "not counted"
+  // would invite a second tap, so send them to the balance instead.
+  if (error instanceof UnconfirmedDrinkError) {
+    return "Couldn't confirm your cup. Check your balance before tapping again."
+  }
+  if (error instanceof TimeoutError) return 'That took too long. Try again.'
   if (error instanceof ApiError) {
     switch (error.code) {
       case 'NO_BALANCE':
