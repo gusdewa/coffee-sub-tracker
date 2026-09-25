@@ -18,14 +18,6 @@
   );
 }
 
-/* A visible undo takes its own line, so the content has to clear that too. */
-.app:has(.snackbar) {
-  --overlay-clearance: calc(
-    var(--update-h) + var(--fab-height) + var(--snackbar-height) + 2 * var(--gap-stack) +
-      var(--gap-m)
-  );
-}
-
 .app__main {
   flex: 1 1 auto;
   /* Without this a flex child refuses to shrink, and the document scrolls
@@ -98,15 +90,19 @@
 
 .slip__number {
   color: var(--punch);
-  font-size: var(--step-hero);
+  /* Capped by height too: in landscape the hero alone would fill the screen. */
+  font-size: min(var(--step-hero), 18dvh);
   font-weight: 700;
   line-height: 0.85;
   letter-spacing: -0.05em;
 }
 
-/* Nothing left is a different fact, not a smaller one. */
+/*
+ * Nothing left is a different fact, not a smaller one. Faint ink, not --spent:
+ * that is the colour of used-up marks and is unreadable as text.
+ */
 .slip:has(.slip__next--empty) .slip__number {
-  color: var(--spent);
+  color: var(--ink-faint);
 }
 
 .slip__unit {
@@ -137,11 +133,69 @@
   margin-top: var(--gap-m);
 }
 
+/* A short screen (landscape, or big text on a small phone) trims the slip, not the balance. */
+@media (max-height: 40rem) {
+  .slip {
+    margin-bottom: var(--gap-m);
+    padding: var(--gap-m) var(--gap-m) var(--gap-s);
+  }
+
+  .slip__count {
+    margin-bottom: var(--gap-s);
+  }
+
+  .slip__next,
+  .slip__next--empty {
+    margin-top: var(--gap-s);
+  }
+}
+
 .home__heading {
   margin: 0 0 var(--gap-s);
   color: var(--ink-soft);
   font-size: var(--step-0);
   font-weight: 600;
+}
+
+/* --- your pace: the last seven days, and an estimate behind a question --- */
+
+.pace {
+  margin-top: var(--gap-l);
+  padding: var(--gap-s) var(--gap-m);
+  background: var(--paper-raised);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-card);
+}
+
+.pace__count {
+  margin: 0 0 var(--gap-xs);
+}
+
+.pace__details {
+  margin-top: var(--gap-xs);
+}
+
+.pace__headline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pace__detail {
+  margin: 0 0 var(--gap-xs);
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+
+/* Small on purpose: seven bars are a glance, and never wider than a phone's. */
+.recent-bars {
+  max-width: 13rem;
+}
+
+.recent-bars__chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
 }
 
 /* --- punch cards --------------------------------------------------------- */
@@ -186,11 +240,6 @@
   font-weight: 600;
 }
 
-.card__date {
-  color: var(--ink-faint);
-  font-size: var(--step--1);
-}
-
 .card__marks {
   display: flex;
   flex-wrap: wrap;
@@ -233,10 +282,11 @@
   font-weight: 600;
 }
 
+/* Top-right, beside the card's name; the card's right padding keeps its column clear. */
 .card__put-back {
   position: absolute;
+  top: var(--gap-xs);
   right: var(--gap-xs);
-  bottom: var(--gap-xs);
   display: grid;
   place-items: center;
   width: 44px;
@@ -289,7 +339,7 @@
   font-size: var(--step-1);
   font-weight: 600;
   cursor: pointer;
-  transition: background 120ms ease, transform 120ms ease;
+  transition: background var(--dur-press) ease, transform var(--dur-press) ease;
 }
 
 .drink:hover:not(:disabled) {
@@ -428,6 +478,7 @@
 }
 
 .error__retry {
+  min-height: 44px;
   padding: 6px 14px;
   background: transparent;
   border: 1px solid var(--ink-soft);
@@ -447,7 +498,7 @@
 .skeleton {
   background: var(--paper-edge);
   border-radius: var(--radius-card);
-  animation: pulse 1.4s ease-in-out infinite;
+  animation: pulse var(--dur-pulse) ease-in-out infinite;
 }
 
 .skeleton--name { height: 1rem; width: 6rem; margin-bottom: var(--gap-s); }

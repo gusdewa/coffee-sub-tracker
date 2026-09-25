@@ -1,8 +1,16 @@
-import { useEffect } from 'react'
-import { useCoffee, loadMe, undoDrink } from '../state/coffee'
+import { useEffect, useState } from 'react'
+import type { AllocationView } from '../api/client'
+import { useCoffee, loadMe, undoDrink, type UndoOffer } from '../state/coffee'
+import { PaceCard } from '../components/PaceCard'
 import { PunchCard } from '../components/PunchCard'
+import { SafeSection } from '../components/SafeSection'
 import { Skeleton } from '../components/Skeleton'
 import { ErrorState } from '../components/ErrorState'
+
+/** Whether a Put Back offer is for this card: by row key, or by batch from an older API. */
+function holdsOffer(card: AllocationView, offer: UndoOffer): boolean {
+  return offer.allocRowKey ? offer.allocRowKey === card.allocRowKey : offer.batchId === card.batchId
+}
 
 /**
  * Home answers three questions, in this order:
@@ -19,7 +27,13 @@ import { ErrorState } from '../components/ErrorState'
  * shell read as one object: a card you punch.
  */
 export function MyCoffee() {
-  const { data, error, undo, busy } = useCoffee()
+  const { data, error, undo, busy, undoError } = useCoffee()
+  /*
+   * The offer a card's Put Back was last pressed for. A refusal clears the
+   * store's offer, and with it the only record of which card the cup came off,
+   * yet the reason belongs beside that card — not in the shell's shared error.
+   */
+  const [pressed, setPressed] = useState<UndoOffer | null>(null)
 
   useEffect(() => {
     if (!data) void loadMe()
@@ -38,6 +52,10 @@ export function MyCoffee() {
   const cards = data.allocations.filter((a) => a.granted > 0)
   const nextIndex = cards.findIndex((a) => a.remaining > 0)
   const next = nextIndex >= 0 ? cards[nextIndex] : undefined
+  const failed = undoError && {
+    error: undoError.error,
+    offer: [pressed, undo].find((offer) => offer?.opId === undoError.opId),
+  }
 
   return (
     <div className="screen">
@@ -71,16 +89,25 @@ export function MyCoffee() {
                 key={a.allocRowKey || a.batchId}
                 allocation={a}
                 isNext={i === nextIndex}
-                canPutBack={Boolean(undo && (undo.allocRowKey
-                  ? undo.allocRowKey === a.allocRowKey
-                  : undo.batchId === a.batchId))}
+                canPutBack={Boolean(undo && holdsOffer(a, undo))}
                 putBackBusy={busy}
-                onPutBack={() => void undoDrink()}
+                putBackError={failed?.offer && holdsOffer(a, failed.offer) ? failed.error : null}
+                onPutBack={() => {
+                  if (!undo) return
+                  setPressed(undo)
+                  // By opId: this button is for this cup, never a newer one.
+                  void undoDrink(undo.opId)
+                }}
               />
             ))}
           </div>
         </section>
       )}
+
+      {/* An extra: a bug in it must never take the balance or the cards down. */}
+      <SafeSection>
+        <PaceCard />
+      </SafeSection>
     </div>
   )
 }

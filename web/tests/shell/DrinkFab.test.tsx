@@ -1,11 +1,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const me = vi.fn()
 const drinkCall = vi.fn()
 const undoCall = vi.fn()
 const balancesCall = vi.fn()
+const historyCall = vi.fn()
 
 vi.mock('../../src/api/client', async () => {
   const actual =
@@ -17,13 +18,15 @@ vi.mock('../../src/api/client', async () => {
       drink: (...a: unknown[]) => drinkCall(...a),
       undo: (...a: unknown[]) => undoCall(...a),
       balances: (...a: unknown[]) => balancesCall(...a),
+      history: (...a: unknown[]) => historyCall(...a),
     },
   }
 })
 
 const store = await import('../../src/state/coffee')
+const { resetHistoryStore } = await import('../../src/state/history')
 const { DrinkFab } = await import('../../src/shell/DrinkFab')
-const { UndoSnackbar } = await import('../../src/shell/UndoSnackbar')
+const { DrinkSummarySheet } = await import('../../src/shell/DrinkSummarySheet')
 const { ApiError } = await import('../../src/api/client')
 
 const balance = (totalRemaining: number) => ({
@@ -32,11 +35,14 @@ const balance = (totalRemaining: number) => ({
   allocations: [],
 })
 
-const mount = () =>
+/** The action on its own: anything a Drink does beyond the store shows up here. */
+const mount = () => render(<DrinkFab />)
+/** The action with the summary it opens, as the shell mounts them. */
+const mountWithSummary = () =>
   render(
     <>
-      <UndoSnackbar />
       <DrinkFab />
+      <DrinkSummarySheet />
     </>,
   )
 
@@ -45,7 +51,9 @@ beforeEach(() => {
   vi.spyOn(window, 'open').mockReturnValue(null)
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   store.resetCoffeeStore()
+  resetHistoryStore()
   me.mockResolvedValue(balance(5))
+  historyCall.mockResolvedValue({ items: [] })
   balancesCall.mockResolvedValue({
     balances: [
       { memberId: 'M1', displayName: 'Dewa', remaining: 4 },
@@ -53,7 +61,10 @@ beforeEach(() => {
     ],
   })
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('the Drink action', () => {
   const successfulDrink = {
@@ -61,71 +72,48 @@ describe('the Drink action', () => {
     allocRowKey: 'A|SEPTEMBER',
     batchLabel: 'September beans',
     remainingTotal: 4,
-    createdAt: '2026-09-04T10:00:00.000Z',
+    // 09:12 in Jakarta.
+    createdAt: '2026-09-25T02:12:00.000Z',
     undoExpiresAt: '2099-09-04T10:01:30.000Z',
   }
 
-  /*
-   * The handoff target is a secondary context reserved during the trusted
-   * click, so the auto-jump after the async mutation cannot be popup-blocked
-   * and the PWA document never navigates away from under the snackbar.
-   */
-  const reservedWindow = () => {
-    const win = {
-      opener: window,
-      location: { assign: vi.fn() },
-      close: vi.fn(),
-    }
-    vi.mocked(window.open).mockReturnValue(win as unknown as Window & typeof globalThis)
-    return win
-  }
-  const jumpUrl = (win: { location: { assign: { mock: { calls: unknown[][] } } } }) =>
-    String(win.location.assign.mock.calls.at(-1)?.[0] ?? '')
-
-  const handoff = (): HTMLAnchorElement | undefined =>
-    vi.mocked(HTMLAnchorElement.prototype.click).mock.instances.at(-1) as unknown as
-      | HTMLAnchorElement
-      | undefined
-  const handoffUrl = () => handoff()?.href ?? ''
-
-  test('reserves the handoff context inside the click and jumps it only after success', async () => {
-    const win = reservedWindow()
-    let release: (value: typeof successfulDrink) => void = () => {}
-    drinkCall.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+  test('Drink never calls window.open, clicks an anchor, or fetches balances', async () => {
+    drinkCall.mockResolvedValue(successfulDrink)
     await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
     mount()
 
-    act(() => screen.getByRole('button', { name: 'Drink' }).click())
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    await waitFor(() => expect(store.getCoffeeState().receipt?.opId).toBe('op1'))
+    // Past the moment the old handoff would have fired.
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(2))
 
-    // The reservation is synchronous with the trusted gesture; the mutation
-    // has not even started, so nothing has navigated anywhere yet.
-    expect(window.open).toHaveBeenCalledTimes(1)
-    expect(window.open).toHaveBeenCalledWith('', 'coffee-sub-wa-handoff')
-    expect(win.opener).toBeNull()
-    expect(win.location.assign).not.toHaveBeenCalled()
-    expect(win.close).not.toHaveBeenCalled()
+    expect(drinkCall).toHaveBeenCalledTimes(1)
+    expect(window.open).not.toHaveBeenCalled()
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled()
-
-    await act(async () => release(successfulDrink))
-    await waitFor(() => expect(balancesCall).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
-    expect(screen.getByRole('status')).toHaveTextContent(/^Drink 1$/)
-
-    expect(win.close).not.toHaveBeenCalled()
-    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled()
-    expect(jumpUrl(win)).toMatch(/^https:\/\/wa\.me\/\?text=/)
-    const message = decodeURIComponent(jumpUrl(win).split('=')[1]!)
-    expect(message.startsWith('Cart Coffee\n')).toBe(true)
-    expect(message).toContain('Dewa drank 1 cup')
-    expect(message).toContain('September beans')
-    expect(message).toContain('Dewa: 4 cups')
-    expect(message).toContain('Ayu: 2 cups')
-    expect(message.indexOf('Dewa:')).toBeLessThan(message.indexOf('Ayu:'))
-    expect(message).toContain('Total remaining: 6 cups')
+    // Team balances are the summary's business, fetched only once it is open.
+    expect(balancesCall).not.toHaveBeenCalled()
   })
 
-  test('warns after success and reserves neither a key nor WhatsApp until explicit confirmation', async () => {
-    const win = reservedWindow()
+  test('success opens Drink 1 with focus on it', async () => {
+    drinkCall.mockResolvedValue(successfulDrink)
+    await act(async () => void (await store.loadMe()))
+    const user = userEvent.setup()
+    mountWithSummary()
+
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+
+    const summary = await screen.findByRole('dialog', { name: 'Drink 1' })
+    expect(summary).toHaveAttribute('open')
+    expect(screen.getByRole('heading', { name: 'Drink 1' })).toHaveFocus()
+    expect(drinkCall).toHaveBeenCalledTimes(1)
+    expect(window.open).not.toHaveBeenCalled()
+  })
+
+  test('warns with the time and card of the cup already counted, and makes no key until confirmed', async () => {
+    // Date only, so user-event and waitFor keep their real timers.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-25T03:00:00.000Z'))
     drinkCall
       .mockResolvedValueOnce(successfulDrink)
       .mockResolvedValueOnce({ ...successfulDrink, opId: 'op2', remainingTotal: 3 })
@@ -133,119 +121,108 @@ describe('the Drink action', () => {
     const user = userEvent.setup()
     mount()
     await user.click(screen.getByRole('button', { name: 'Drink' }))
-    await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
-    vi.mocked(window.open).mockClear()
+    await waitFor(() => expect(store.getCoffeeState().undo?.opId).toBe('op1'))
+    const uuid = vi.spyOn(crypto, 'randomUUID')
 
     await user.click(screen.getByRole('button', { name: 'Drink' }))
-    expect(screen.getByRole('alertdialog', { name: /drink another/i })).toBeInTheDocument()
+    const warning = screen.getByRole('alertdialog', { name: 'Drink another?' })
+    // "You just counted a drink" stayed on screen all day; the time says which cup.
+    expect(warning).toHaveAccessibleDescription(
+      'You counted a cup at 09:12 from September beans. Count one more?',
+    )
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
     expect(drinkCall).toHaveBeenCalledTimes(1)
-    expect(window.open).not.toHaveBeenCalled()
+    expect(uuid).not.toHaveBeenCalled()
+
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(uuid).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Drink' }))
     await user.dblClick(screen.getByRole('button', { name: 'Drink another' }))
     await waitFor(() => expect(drinkCall).toHaveBeenCalledTimes(2))
-    expect(drinkCall).toHaveBeenCalledTimes(2)
-    expect(window.open).toHaveBeenCalledTimes(1)
+    expect(uuid).toHaveBeenCalledTimes(1)
+    expect(window.open).not.toHaveBeenCalled()
   })
 
-  test('jumps with a truthful self-only recap when balances fail', async () => {
-    const win = reservedWindow()
-    drinkCall.mockResolvedValue(successfulDrink)
-    balancesCall.mockRejectedValue(new Error('balances unavailable'))
+  test.each([
+    ['no time', { createdAt: 'not a time' }, 'You already counted a cup today. Count one more?'],
+    ['no card', { batchLabel: '' }, 'You counted a cup at 09:12. Count one more?'],
+  ])('the warning still reads truthfully with %s', async (_label, overrides, copy) => {
+    drinkCall.mockResolvedValue({ ...successfulDrink, ...overrides })
     await act(async () => void (await store.loadMe()))
     const user = userEvent.setup()
     mount()
+    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    await waitFor(() => expect(store.getCoffeeState().undo?.opId).toBe('op1'))
 
     await user.click(screen.getByRole('button', { name: 'Drink' }))
 
-    await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
-    const message = decodeURIComponent(jumpUrl(win).split('=')[1]!)
-    expect(message).toContain('Dewa drank 1 cup')
-    expect(message).toContain('September beans')
-    expect(message).toContain('Dewa: 4 cups')
-    expect(message).not.toContain('Ayu')
-    expect(message).toContain('Full balance list unavailable.')
-    expect(message).not.toContain('Current balances:')
-    expect(message).not.toContain('Total remaining:')
+    expect(screen.getByRole('alertdialog', { name: 'Drink another?' })).toHaveAccessibleDescription(copy)
   })
 
-  test('falls back to a same-context jump when the reservation is blocked', async () => {
-    // beforeEach leaves window.open returning null, the blocked case.
+  test('Cancel and Escape return focus to Drink', async () => {
     drinkCall.mockResolvedValue(successfulDrink)
     await act(async () => void (await store.loadMe()))
     const user = userEvent.setup()
     mount()
+    const fab = screen.getByRole('button', { name: 'Drink' })
+    await user.click(fab)
+    await waitFor(() => expect(store.getCoffeeState().undo?.opId).toBe('op1'))
 
-    await user.click(screen.getByRole('button', { name: 'Drink' }))
+    await user.click(fab)
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(fab).toHaveFocus()
 
-    await waitFor(() => expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1))
-    const navigated = handoff()
-    expect(navigated?.target).toBe('_self')
-    expect(navigated?.href).toMatch(/^https:\/\/wa\.me\/\?text=/)
-    const message = decodeURIComponent(handoffUrl().split('=')[1]!)
-    expect(message).toContain('Dewa drank 1 cup')
+    await user.click(fab)
+    expect(screen.getByRole('alertdialog', { name: 'Drink another?' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(fab).toHaveFocus()
+
     expect(drinkCall).toHaveBeenCalledTimes(1)
   })
 
-  test('keeps an accessible WhatsApp fallback if every automatic route fails', async () => {
-    drinkCall.mockResolvedValue(successfulDrink)
-    vi.mocked(HTMLAnchorElement.prototype.click).mockImplementationOnce(() => {
-      throw new Error('navigation unavailable')
-    })
-    await act(async () => void (await store.loadMe()))
-    const user = userEvent.setup()
-    mount()
-
-    await user.click(screen.getByRole('button', { name: 'Drink' }))
-
-    const fallback = await screen.findByRole('link', { name: 'Open WhatsApp' })
-    expect(fallback).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/\?text=/))
-    const message = decodeURIComponent(fallback.getAttribute('href')!.split('=')[1]!)
-    expect(message).toContain('Dewa drank 1 cup')
-    expect(drinkCall).toHaveBeenCalledTimes(1)
-  })
-
-  test('closes the reserved context and fetches nothing when Drink fails', async () => {
-    const win = reservedWindow()
+  test('a failure opens nothing and fetches nothing', async () => {
     drinkCall.mockRejectedValue(new ApiError('NO_BALANCE', 'none', 409))
     await act(async () => void (await store.loadMe()))
     const user = userEvent.setup()
-    mount()
+    mountWithSummary()
 
     await user.click(screen.getByRole('button', { name: 'Drink' }))
 
-    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
-    await waitFor(() => expect(win.close).toHaveBeenCalledTimes(1))
-    expect(win.location.assign).not.toHaveBeenCalled()
-    expect(balancesCall).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alert')).toHaveTextContent('No cups left on any card.')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(window.open).not.toHaveBeenCalled()
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled()
+    expect(balancesCall).not.toHaveBeenCalled()
+    expect(historyCall).not.toHaveBeenCalled()
   })
 
-  test('closes the reserved context instead of jumping when the cup is put back first', async () => {
-    const win = reservedWindow()
-    drinkCall.mockResolvedValue(successfulDrink)
-    undoCall.mockResolvedValue({ remainingTotal: 5 })
-    let releaseBalances: (value: unknown) => void = () => {}
-    balancesCall.mockImplementation(() => new Promise((resolve) => (releaseBalances = resolve)))
+  test('after 8 seconds of counting, an always-present status says not to tap again', async () => {
+    let release: (value: unknown) => void = () => {}
+    drinkCall.mockImplementation(() => new Promise((resolve) => (release = resolve)))
     await act(async () => void (await store.loadMe()))
-    const user = userEvent.setup()
     mount()
+    // Present and empty before anything happens, so the words are announced
+    // when they arrive rather than the region itself.
+    const status = screen.getByRole('status')
+    expect(status).toBeEmptyDOMElement()
 
-    await user.click(screen.getByRole('button', { name: 'Drink' }))
-    await waitFor(() => expect(store.getCoffeeState().undo?.opId).toBe('op1'))
-    await act(async () => void (await store.undoDrink()))
-    await waitFor(() => expect(undoCall).toHaveBeenCalledTimes(1))
-    await act(async () =>
-      releaseBalances({ balances: [{ memberId: 'M1', displayName: 'Dewa', remaining: 4 }] }),
-    )
-
-    await waitFor(() => expect(win.close).toHaveBeenCalledTimes(1))
-    expect(win.location.assign).not.toHaveBeenCalled()
-    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled()
-    expect(screen.queryByRole('link', { name: 'Open WhatsApp' })).toBeNull()
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: 'Drink' }))
+    await act(async () => void (await vi.advanceTimersByTimeAsync(7_999)))
+    expect(status).toBeEmptyDOMElement()
+    await act(async () => void (await vi.advanceTimersByTimeAsync(1)))
+    expect(status).toHaveTextContent('Still counting — no need to tap again.')
+    expect(screen.getByRole('button', { name: 'Working…' })).toBeInTheDocument()
     expect(drinkCall).toHaveBeenCalledTimes(1)
+
+    await act(async () => release(successfulDrink))
+    expect(screen.getByRole('status')).toBe(status)
+    expect(status).toBeEmptyDOMElement()
   })
 
   test('always shows its label — never an icon on its own', async () => {
@@ -268,8 +245,7 @@ describe('the Drink action', () => {
     expect(screen.getByRole('button', { name: 'Drink' })).toBeEnabled()
   })
 
-  test('a double tap sends exactly one request and reserves exactly one context', async () => {
-    const win = reservedWindow()
+  test('a double tap sends exactly one request', async () => {
     let release: (v: unknown) => void = () => {}
     drinkCall.mockImplementation(() => new Promise((res) => (release = res)))
     await act(async () => void (await store.loadMe()))
@@ -281,13 +257,14 @@ describe('the Drink action', () => {
     expect(working).toBeEnabled()
     expect(working).toHaveAttribute('aria-disabled', 'true')
     expect(working).toHaveAttribute('aria-busy', 'true')
-    expect(window.open).toHaveBeenCalledTimes(1)
     await user.click(working)
     expect(drinkCall).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('alert')).toHaveTextContent('Drink is already being counted.')
 
     await act(async () => release(successfulDrink))
-    await waitFor(() => expect(win.location.assign).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(store.getCoffeeState().receipt?.opId).toBe('op1'))
+    expect(drinkCall).toHaveBeenCalledTimes(1)
+    expect(window.open).not.toHaveBeenCalled()
   })
 
   test('zero balance disables it and says why', async () => {
@@ -334,43 +311,13 @@ describe('the Drink action', () => {
   })
 })
 
-describe('the transient success notice', () => {
-  test('announces the exact success copy wherever you happen to be', async () => {
-    drinkCall.mockResolvedValue({
-      opId: 'op1', allocRowKey: 'A|SEPTEMBER', batchLabel: 'September beans', remainingTotal: 4,
-      createdAt: '2026-09-04T10:00:00.000Z', undoExpiresAt: '2099-09-04T10:01:30.000Z',
-    })
-    await act(async () => void (await store.loadMe()))
-    const user = userEvent.setup()
-    mount()
-    await user.click(screen.getByRole('button', { name: 'Drink' }))
-
-    const bar = await screen.findByRole('status')
-    expect(bar).toHaveTextContent(/^Drink 1$/)
-    expect(bar).toHaveAttribute('aria-live', 'polite')
-  })
-
-  test('expires after 10 seconds without discarding card-level undo eligibility', async () => {
-    vi.useFakeTimers()
-    drinkCall.mockResolvedValue({
-      opId: 'op1', allocRowKey: 'A|SEPTEMBER', batchLabel: 'B', remainingTotal: 4,
-      createdAt: new Date().toISOString(), undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
-    })
-    await act(async () => void (await store.loadMe()))
-    mount()
-    await act(async () => void store.drink())
-
-    expect(screen.getByRole('status')).toHaveTextContent('Drink 1')
-    await act(async () => vi.advanceTimersByTimeAsync(9_999))
-    expect(screen.getByRole('status')).toBeInTheDocument()
-    await act(async () => vi.advanceTimersByTimeAsync(1))
-    expect(screen.queryByRole('status')).toBeNull()
-    expect(store.getCoffeeState().undo?.opId).toBe('op1')
-  })
-
+describe('the summary it opens', () => {
   test('is absent until a cup is actually taken', async () => {
     await act(async () => void (await store.loadMe()))
-    mount()
-    expect(screen.queryByRole('status')).toBeNull()
+    mountWithSummary()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    expect(historyCall).not.toHaveBeenCalled()
+    expect(balancesCall).not.toHaveBeenCalled()
   })
 })

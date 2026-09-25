@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import axe from 'axe-core'
@@ -7,7 +7,7 @@ import axe from 'axe-core'
 /**
  * axe-core has been a devDependency since the PWA pass and was imported
  * nowhere. The shell is a good place to start using it: a dock, a floating
- * action, a menu and a snackbar are exactly the shapes where roles and names
+ * action, a menu and modal sheets are exactly the shapes where roles and names
  * quietly go wrong.
  *
  * Colour contrast is excluded because jsdom does not lay out or paint, so the
@@ -17,6 +17,9 @@ import axe from 'axe-core'
 
 const me = vi.fn()
 const drinkCall = vi.fn()
+const undoCall = vi.fn()
+const historyCall = vi.fn()
+const balancesCall = vi.fn()
 const authState = { user: { uid: 'u1' }, loading: false }
 vi.mock('../../src/auth/useAuth', () => ({ useAuth: () => authState }))
 vi.mock('../../src/auth/firebase', () => ({
@@ -32,15 +35,16 @@ vi.mock('../../src/api/client', async () => {
     api: {
       me: (...a: unknown[]) => me(...a),
       drink: (...a: unknown[]) => drinkCall(...a),
-      undo: vi.fn(),
-      history: vi.fn().mockResolvedValue({ items: [] }),
-      balances: vi.fn().mockResolvedValue({ balances: [] }),
+      undo: (...a: unknown[]) => undoCall(...a),
+      history: (...a: unknown[]) => historyCall(...a),
+      balances: (...a: unknown[]) => balancesCall(...a),
       batches: vi.fn().mockResolvedValue({ batches: [] }),
     },
   }
 })
 
 const store = await import('../../src/state/coffee')
+const { resetHistoryStore } = await import('../../src/state/history')
 const { App } = await import('../../src/App')
 
 const RULES = { rules: { 'color-contrast': { enabled: false } } }
@@ -53,6 +57,10 @@ const check = async (container: HTMLElement) => {
 beforeEach(() => {
   vi.clearAllMocks()
   store.resetCoffeeStore()
+  resetHistoryStore()
+  balancesCall.mockResolvedValue({
+    balances: [{ memberId: 'M2', displayName: 'Ayu', remaining: 2 }],
+  })
   localStorage.clear()
   localStorage.setItem('onboarding.coffee-sub.v1', 'finished')
   me.mockResolvedValue({
@@ -110,33 +118,54 @@ describe('shell accessibility', () => {
     }
   })
 
-  test('the success, card-level Put Back and duplicate warning have no violations', async () => {
-    const reserved = {
-      closed: false,
-      location: { assign: vi.fn() },
-      close: vi.fn(),
-      focus: vi.fn(),
-    } as unknown as Window
-    const open = vi.spyOn(window, 'open').mockReturnValue(reserved)
-    drinkCall.mockResolvedValue({
-      opId: 'op1', txnRowKey: 'T1', allocRowKey: 'A|SEPTEMBER', batchId: 'B1',
-      batchLabel: 'September beans', remainingTotal: 2, replayed: false,
+  test('the summary in both states, the card Put Back and the Drink another? warning have no violations', async () => {
+    // The sheets are portaled into document.body, outside the render container,
+    // so the whole page is what gets scanned.
+    const cup = (opId: string, remainingTotal: number) => ({
+      opId, txnRowKey: `T-${opId}`, allocRowKey: 'A|SEPTEMBER', batchId: 'B1',
+      batchLabel: 'September beans', remainingTotal, replayed: false,
       createdAt: new Date().toISOString(),
       undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
     })
+    drinkCall.mockResolvedValueOnce(cup('op1', 2)).mockResolvedValueOnce(cup('op2', 1))
+    undoCall.mockResolvedValue({ remainingTotal: 2 })
+    // The page holds the first cup, so the summary's figures render too.
+    historyCall.mockResolvedValue({
+      items: [
+        { opId: 'op1', type: 'CONSUME', delta: -1, batchLabel: 'September beans', createdAt: new Date().toISOString(), reversed: false },
+      ],
+    })
     const user = userEvent.setup()
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/']}>
         <App />
       </MemoryRouter>,
     )
+
     await user.click(await screen.findByRole('button', { name: 'Drink' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Drink 1')
+    const summary = await screen.findByRole('dialog', { name: 'Drink 1' })
+    await within(summary).findByText(/cups? today/)
+    await waitFor(() =>
+      expect(within(summary).getByRole('link', { name: 'Share to WhatsApp' })).toHaveAccessibleDescription(
+        /Includes team balances/,
+      ),
+    )
     expect(screen.getByRole('button', { name: 'Put back cup from September beans' })).toBeInTheDocument()
-    await waitFor(() => expect(reserved.location.assign).toHaveBeenCalledTimes(1))
+    expect(await check(document.body)).toEqual([])
+
+    await user.click(within(summary).getByRole('button', { name: 'Done' }))
     await user.click(screen.getByRole('button', { name: 'Drink' }))
-    expect(await screen.findByRole('alertdialog', { name: /drink another/i })).toBeInTheDocument()
-    expect(await check(container)).toEqual([])
-    open.mockRestore()
-  })
+    expect(await screen.findByRole('alertdialog', { name: 'Drink another?' })).toBeInTheDocument()
+    expect(await check(document.body)).toEqual([])
+
+    await user.click(screen.getByRole('button', { name: 'Drink another' }))
+    const second = await screen.findByRole('dialog', { name: 'Drink 1' })
+    await user.click(within(second).getByRole('button', { name: 'Put back this cup' }))
+    expect(await within(second).findByRole('heading', { name: 'Cup put back' })).toHaveFocus()
+    expect(await check(document.body)).toEqual([])
+    expect(drinkCall).toHaveBeenCalledTimes(2)
+    expect(undoCall).toHaveBeenCalledTimes(1)
+    // Three whole-page axe scans take 3-5s alone and more under a full parallel
+    // run, which tripped the 5s default; the budget is for axe, not the app.
+  }, 20_000)
 })

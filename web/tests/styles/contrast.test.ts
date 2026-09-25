@@ -56,6 +56,7 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['--punch-ink', '--punch-soft', 4.5, 'active dock icon, profile initials, next badge'],
   ['--punch-ink', '--paper-raised', 4.5, 'active dock label'],
   ['--punch', '--paper', 3, 'the balance number, large text'],
+  ['--punch', '--paper-raised', 3, 'the 7-day bars and the success cup, on a card or sheet'],
   ['--alert', '--paper-raised', 4.5, 'sign out, inline errors'],
 ]
 
@@ -102,5 +103,36 @@ describe('colour-on-colour surfaces', () => {
         `--paper on --ink in ${scheme}`,
       ).toBeGreaterThanOrEqual(4.5)
     }
+  })
+})
+
+/*
+ * Tokens that pass mean nothing if a rule paints text in one that was never
+ * meant for text. --spent is the colour of used-up things — a punched mark, a
+ * disabled button — and at about 1.9:1 it is unreadable as type, which is how
+ * the empty hero "0" shipped.
+ */
+describe('which colour each text rule uses', () => {
+  const sheet = (name: string) =>
+    readFileSync(resolve(__dirname, '../../src/styles/', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+
+  const ruleBody = (css: string, selector: string) => {
+    const at = css.indexOf(`${selector} {`)
+    expect(at, `${selector} must exist`).toBeGreaterThanOrEqual(0)
+    return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at))
+  }
+
+  test('no rule sets text in --spent', () => {
+    for (const name of ['app.css', 'shell.css']) {
+      const offenders = [...sheet(name).matchAll(/([^{}]+)\{[^}]*(?<![\w-])color:\s*var\(--spent\)[^}]*\}/g)].map(
+        (m) => m[1]!.trim(),
+      )
+      expect(offenders, `${name}: text in --spent`).toEqual([])
+    }
+  })
+
+  test('the empty hero "0" is set in --ink-faint, readable on the slip', () => {
+    const body = ruleBody(sheet('app.css'), '.slip:has(.slip__next--empty) .slip__number')
+    expect(body).toMatch(/(?<![\w-])color:\s*var\(--ink-faint\)/)
   })
 })

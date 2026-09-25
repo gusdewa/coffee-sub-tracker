@@ -2,7 +2,8 @@
 
 Office coffee subscription balances, replacing a WhatsApp thread. Sign in with
 Google, see how many cups you have left, tap **Drink**. It comes off your
-oldest card first, and the interface offers 10 seconds to put it back.
+oldest card first, and a summary sheet shows where it came from and what is
+left. Your latest cup can be put back until the end of the Jakarta day.
 
 - **Frontend** — React + TypeScript + Vite, host-neutral: a GitHub Pages
   project site today, buildable for Cloudflare Pages at the root
@@ -118,16 +119,19 @@ at all.**
   banner read the same store, so they cannot disagree — for a while this was
   documented here but never actually implemented, and the tap simply failed
   after the fact.
-- **Drinking belongs to the shell, not to a screen.** The action and its
-  10-second Put it back offer live in `web/src/state/coffee.ts`, so a cup can be taken from
-  any route and navigating away no longer discards a live undo window.
-- **The WhatsApp jump never leaves the app's own window.** The Drink click
-  reserves a named secondary browsing context (`coffee-sub-wa-handoff`, opener
-  severed) while the gesture is still trusted; only after the server confirms
-  the cup — and the current balances load — does that context jump to `wa.me`
-  with the recap. A failed Drink, or a Put it back before the recap is ready,
-  closes the reserved context instead. A blocked reservation falls back to a
-  same-context jump, then a visible link, and never consumes a second cup.
+- **Drinking belongs to the shell, not to a screen.** The action, its receipt
+  and the Put Back offer live in `web/src/state/coffee.ts`, so a cup can be
+  taken from any route and navigating away never discards a live offer.
+- **A Drink ends in a summary, not a jump.** Once the server confirms the cup,
+  a sheet opens headed **Drink 1** with the live balance, the exact card it
+  came off, and Put Back for that cup. Put Back is the server's call: it covers
+  the latest cup only, on the exact card, through the end of its Jakarta day,
+  and survives a reload (the card keeps it after the sheet is closed).
+- **WhatsApp is optional and only on your tap.** The sheet's **Share to
+  WhatsApp** is a plain `wa.me` link with the recap, opened by that tap in a new
+  tab; nothing is pre-opened or navigated automatically, which is what used to
+  leave a blank white tab. A preview and a Copy message button are the
+  fallback. See `docs/superpowers/specs/2026-09-25-post-drink-summary-design.md`.
 
 ## Still outstanding
 

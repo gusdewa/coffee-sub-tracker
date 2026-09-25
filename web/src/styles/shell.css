@@ -1,5 +1,5 @@
 /*
- * The shell: header, dock, floating Drink action, undo snackbar, profile menu.
+ * The shell: header, dock, floating Drink action, the sheets it opens, profile menu.
  *
  * The old shell was four to six identical text links in a row with sign-out
  * among them, and an active state made of coloured text and a hairline. This
@@ -220,7 +220,7 @@
   width: 3.25rem;
   height: 1.875rem;
   border-radius: var(--radius-pill);
-  transition: background-color 140ms ease;
+  transition: background-color var(--dur-pill) ease;
 }
 
 .dock__link.active {
@@ -239,7 +239,7 @@
   white-space: nowrap;
 }
 
-/* --- the bottom stack: snackbar above the Drink action ------------------- */
+/* --- the bottom stack: the Drink action and its notes -------------------- */
 
 .stack {
   position: fixed;
@@ -293,7 +293,7 @@
    * and while it was mid-fade its label genuinely failed contrast, which is how
    * axe found it.
    */
-  transition: scale 120ms ease;
+  transition: scale var(--dur-press) ease;
 }
 
 .fab:hover:not(:disabled) {
@@ -323,60 +323,9 @@
   white-space: nowrap;
 }
 
-.whatsapp-fallback {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 var(--gap-m);
-  background: var(--paper);
-  border: 1px solid var(--action);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-lift);
-  color: var(--action);
-  font-size: var(--step--1);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.snackbar {
-  z-index: var(--z-snackbar);
-  display: flex;
-  align-items: center;
-  gap: var(--gap-s);
-  align-self: stretch;
-  min-height: var(--snackbar-height);
-  padding: var(--gap-xs) var(--gap-xs) var(--gap-xs) var(--gap-m);
-  background: var(--ink);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-lift);
-  color: var(--paper);
-  font-size: var(--step--1);
-}
-
-.snackbar__text {
-  flex: 1;
-  min-width: 0;
-}
-
-.snackbar__action {
-  flex: none;
-  min-height: 44px;
-  padding: 0 var(--gap-m);
-  background: transparent;
-  border: 1px solid currentColor;
-  border-radius: var(--radius-pill);
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.snackbar__action:disabled {
-  cursor: progress;
-  opacity: 0.6;
-}
-
-.drink-duplicate-warning {
+/* A note beside the Drink action: a second tap, or a Drink still going. */
+.drink-duplicate-warning,
+.drink-slow {
   max-width: min(22rem, calc(100vw - 2 * var(--gap-m)));
   margin: 0;
   padding: var(--gap-s) var(--gap-m);
@@ -389,51 +338,315 @@
   font-weight: 600;
 }
 
-.drink-confirm__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-dialog);
-  display: grid;
-  place-items: center;
-  padding: var(--gap-m);
-  background: rgb(0 0 0 / 45%);
-  pointer-events: auto;
-}
+/* --- sheets: the post-Drink summary and "Drink another?" ----------------- */
 
-.drink-confirm {
-  width: min(100%, 28rem);
-  padding: var(--gap-m);
+/*
+ * A native <dialog> (components/Sheet.tsx), so the browser's own dialog styles
+ * apply first and have to be undone: CanvasText would paint black text on the
+ * dark theme, and the UA max-width caps the box at a centred 282px on a phone.
+ * Only the reset lives here; layout waits for [open], because a closed dialog
+ * must stay display:none.
+ */
+.sheet {
+  width: min(100%, var(--column));
+  max-width: none;
+  margin: auto auto 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
   background: var(--paper-raised);
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-lift);
   color: var(--ink);
 }
 
-.drink-confirm h2,
-.drink-confirm p { margin: 0 0 var(--gap-m); }
-
-.drink-confirm__actions {
+.sheet[open] {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--gap-s);
+  flex-direction: column;
+  /* Clear of the status bar, and never taller than the visible viewport. */
+  max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+  border-radius: var(--radius-stamp) var(--radius-stamp) 0 0;
+  box-shadow: var(--shadow-lift);
 }
 
-.drink-confirm__actions button {
+/*
+ * A literal, not a token: Safari before 17.4 does not inherit :root custom
+ * properties into ::backdrop, and the variable would resolve to nothing.
+ */
+.sheet::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+/* The fallback when showModal() is unavailable: no top layer, so it takes a rung. */
+.sheet--nonmodal {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: var(--z-dialog);
+}
+
+/* A confirm can sit mid-screen once there is room around it. */
+@media (min-width: 40rem) {
+  .sheet--center[open] {
+    width: min(100% - 2 * var(--gap-m), 28rem);
+    margin: auto;
+    border-radius: var(--radius-stamp);
+  }
+}
+
+/* Covers the whole dialog box, so only the backdrop itself is the dialog. */
+.sheet__panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * The sheet's one scroller. The footer below it never scrolls, so its buttons
+ * do not move under a finger; anything that loads late sits in here instead.
+ */
+.sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--gap-m) max(var(--gap-m), env(safe-area-inset-right)) var(--gap-s)
+    max(var(--gap-m), env(safe-area-inset-left));
+}
+
+.sheet__footer {
+  flex: none;
+  display: grid;
+  gap: var(--gap-xs);
+  padding: var(--gap-s) max(var(--gap-m), env(safe-area-inset-right))
+    max(var(--gap-m), env(safe-area-inset-bottom)) max(var(--gap-m), env(safe-area-inset-left));
+  border-top: 1px solid var(--paper-edge);
+}
+
+.sheet__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+  margin-bottom: var(--gap-s);
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: var(--step-2);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.sheet__subline,
+.sheet__caption {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+
+/* Captions reserve their line, so a changing disclosure never shifts the footer. */
+.sheet__caption {
+  min-height: 1.5em;
+}
+
+.sheet__balance {
+  margin: 0 0 var(--gap-xs);
+  font-size: var(--step-1);
+}
+
+.sheet__card {
+  margin: 0 0 var(--gap-m);
+  color: var(--ink-soft);
+}
+
+.sheet__card p {
+  margin: 0;
+}
+
+/* How full the card still is. Decorative: the line above says it in words. */
+.sheet__bar {
+  display: block;
+  height: 6px;
+  margin-top: var(--gap-xs);
+  overflow: hidden;
+  background: var(--paper-edge);
+  border-radius: var(--radius-pill);
+}
+
+.sheet__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--punch);
+  border-radius: inherit;
+}
+
+.sheet__put-back {
+  display: grid;
+  justify-items: start;
+  gap: var(--gap-xs);
+  margin-bottom: var(--gap-s);
+}
+
+.put-back-error {
+  margin: 0;
+  color: var(--alert);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+.put-back-error:not(:empty) {
+  margin-bottom: var(--gap-s);
+}
+
+/* The card's own padding already keeps its Put Back column clear. */
+.card .put-back-error {
+  margin: var(--gap-xs) 0 0;
+}
+
+/* Tall enough for its title, count and bars, so the answer does not shift the sheet. */
+.sheet__recent {
+  min-height: 8rem;
+  margin-top: var(--gap-xs);
+}
+
+.sheet__recent .recent-bars {
+  margin-top: var(--gap-xs);
+}
+
+/* Holds the space while history loads. Still, not a pulsing skeleton. */
+.sheet__recent--pending {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+}
+
+.sheet__recent-title {
+  margin: 0 0 2px;
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+.sheet__recent-count {
+  margin: 0;
+}
+
+/* Buttons and the Share link: 44px targets, whatever the text size. */
+.sheet__button,
+.sheet__share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-xs);
   min-height: 44px;
   padding: 0 var(--gap-m);
+  background: transparent;
   border: 1px solid var(--action);
   border-radius: var(--radius-pill);
-  background: transparent;
   color: var(--action);
   font: inherit;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sheet__button--primary {
+  background: var(--action);
+  color: var(--on-action);
+}
+
+.sheet__button:hover:not(:disabled),
+.sheet__share:hover {
+  border-color: var(--action-press);
+}
+
+.sheet__button--primary:hover:not(:disabled) {
+  background: var(--action-press);
+}
+
+.sheet__button[aria-disabled='true'] {
+  cursor: progress;
+}
+
+.sheet__button:disabled {
+  border-color: var(--paper-edge);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+.sheet__button:focus-visible,
+.sheet__share:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+/* list-item keeps the disclosure triangle; min-height makes it a real target. */
+.sheet summary,
+.pace summary {
+  display: list-item;
+  min-height: 44px;
+  padding-block: 10px;
+  color: var(--ink-soft);
+  font-size: var(--step--1);
   font-weight: 600;
   cursor: pointer;
 }
 
-.drink-confirm__actions .drink-confirm__accept {
-  background: var(--action);
-  color: var(--on-action);
+/* The exact text Share sends, wrapped rather than scrolled sideways. */
+.sheet__message {
+  margin: 0 0 var(--gap-xs);
+  padding: var(--gap-s);
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step--1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sheet__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-s);
+}
+
+.drink-confirm .sheet__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--gap-s);
+}
+
+.drink-confirm__copy {
+  margin: var(--gap-xs) 0 0;
+}
+
+/*
+ * The success cup, drawn at its final frame. Any animation layered on later
+ * starts from and ends at exactly this, so reduced motion shows the finished
+ * picture rather than a half-drawn one.
+ */
+.success-cup {
+  display: block;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  color: var(--punch);
+}
+
+.success-cup__steam {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.success-cup__hole {
+  opacity: 1;
+}
+
+/* The sparks drift out and fade, so the last frame has none. */
+.success-cup__spark {
+  opacity: 0;
 }
 
 /*
@@ -443,6 +656,87 @@
 @media (prefers-reduced-motion: reduce) {
   .fab:active:not(:disabled) {
     scale: 1;
+  }
+}
+
+/*
+ * The success moment and the sheet's arrival, only for those who have not
+ * asked for less motion. Each animation runs *into* the base styles above —
+ * the final frame — with fill-mode both, so before its delay a part waits in
+ * its first frame and afterwards holds its last. Everything is over inside
+ * --dur-celebrate, and nothing here gates a control.
+ *
+ *   0–240ms    the cup pops in (scale 0.85 → 1, fading in)
+ *   200–760ms  the steam draws upwards, the second stroke 120ms behind
+ *   360–700ms  three sparks drift out and fade
+ *   600–800ms  the hole is punched through
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .sheet[open] {
+    animation: sheet-in var(--dur-sheet) var(--ease-out) both;
+  }
+
+  .success-cup {
+    animation: success-cup-pop var(--dur-sheet) var(--ease-out) both;
+  }
+
+  .success-cup__steam {
+    animation: success-cup-steam var(--dur-steam) var(--ease-out) var(--delay-steam) both;
+  }
+
+  .success-cup__steam ~ .success-cup__steam {
+    animation-delay: calc(var(--delay-steam) + var(--stagger-steam));
+  }
+
+  .success-cup__spark {
+    animation: success-cup-spark var(--dur-spark) var(--ease-out) var(--delay-spark) both;
+  }
+
+  .success-cup__hole {
+    animation: success-cup-hole var(--dur-hole) var(--ease-out) var(--delay-hole) both;
+  }
+
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(1.5rem);
+    }
+  }
+
+  @keyframes success-cup-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+  }
+
+  @keyframes success-cup-steam {
+    from {
+      stroke-dashoffset: 1;
+    }
+  }
+
+  /* Starts and ends invisible: the final frame has no sparks. */
+  @keyframes success-cup-spark {
+    from {
+      opacity: 0;
+      transform: translate(0, 0);
+    }
+
+    30% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+      transform: translate(3px, -3px);
+    }
+  }
+
+  @keyframes success-cup-hole {
+    from {
+      opacity: 0;
+    }
   }
 }
 
@@ -629,7 +923,7 @@
   font-size: var(--step-0);
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color var(--dur-press) ease, background-color var(--dur-press) ease;
 }
 
 .login__cta:hover:not(:disabled) {

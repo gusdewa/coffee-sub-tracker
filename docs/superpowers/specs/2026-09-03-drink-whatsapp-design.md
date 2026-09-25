@@ -1,3 +1,5 @@
+> Superseded by [2026-09-25-post-drink-summary-design.md](2026-09-25-post-drink-summary-design.md). The automatic WhatsApp handoff described here was removed: it opened a blank tab on phones.
+
 # Drink Refresh and WhatsApp Handoff Design
 
 ## Problem

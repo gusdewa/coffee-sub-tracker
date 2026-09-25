@@ -1,11 +1,11 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AxeBuilder from '@axe-core/playwright'
 import { startServer, type SwappableServer } from './server'
-import { signedInShell, loginScreen, API } from './fixtures'
+import { signedInShell, loginScreen, settleSheet, API } from './fixtures'
 
 /**
  * Login and Home, on real phone metrics.
@@ -86,6 +86,16 @@ const isReachable = (page: Page, selector: string) =>
     const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
     return el === hit || el.contains(hit)
   }, selector)
+
+/** The same test for a located element: its centre is what a tap there would hit. */
+const isLocatorReachable = (locator: Locator) =>
+  locator.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0) return false
+    if (r.top < 0 || r.bottom > window.innerHeight) return false
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return el === hit || el.contains(hit)
+  })
 
 test.describe('login', () => {
   test('is ready, with the call to action above the fold', async ({ page }, info) => {
@@ -215,14 +225,25 @@ test.describe('home', () => {
     expect(documentScrolls).toBe(false)
   })
 
-  test('header, dock, action, snackbar and tour coexist without covering each other', async ({
+  test('the summary sheet keeps its actions reachable, and the shell is reachable again after Done', async ({
     page,
   }, info) => {
     await signedInShell(page, server.url, { batches: 4 })
     await page.locator('.fab').click()
-    await expect(page.locator('.snackbar')).toBeVisible()
+    const sheet = page.getByRole('dialog', { name: 'Drink 1' })
+    await expect(sheet).toBeVisible()
+    await settleSheet(page)
 
-    for (const sel of ['.app-header__title', '.profile__trigger', '.fab', '.snackbar']) {
+    // While the sheet is up it owns the screen: its own actions are what a tap reaches.
+    const done = sheet.getByRole('button', { name: 'Done' })
+    const share = sheet.getByRole('link', { name: 'Share to WhatsApp' })
+    expect(await isLocatorReachable(done), 'Done is reachable').toBe(true)
+    expect(await isLocatorReachable(share), 'Share to WhatsApp is reachable').toBe(true)
+    await shot(page, '36-home-sheet-actions', info.project.name)
+
+    await done.click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    for (const sel of ['.app-header__title', '.profile__trigger', '.fab']) {
       expect(await isReachable(page, sel), `${sel} is reachable`).toBe(true)
     }
     for (const link of await page.locator('.dock a').all()) {

@@ -8,10 +8,9 @@ import { resolve } from 'node:path'
  *
  * The document used to be the scroller, with the dock fixed on top of it and
  * <main> padded by hand to compensate. That works until a second fixed layer
- * appears — and there are now four: the dock, the update prompt, the Drink
- * action and the snackbar. The shell is a flex column, <main> owns the scroll,
- * and every offset is computed from shared variables so nothing is counted
- * twice or missed.
+ * appears — and there are now three: the dock, the update prompt and the Drink
+ * action. The shell is a flex column, <main> owns the scroll, and every offset
+ * is computed from shared variables so nothing is counted twice or missed.
  */
 
 const css = (name: string) =>
@@ -29,6 +28,7 @@ const rule = (sheet: string, selector: string): string => {
 
 const shell = () => css('shell.css')
 const app = () => css('app.css')
+const everySheet = () => ['tokens.css', 'app.css', 'shell.css'].map(css).join('\n')
 
 describe('the scroll contract', () => {
   test('the shell fills the viewport without the document scrolling', () => {
@@ -47,12 +47,36 @@ describe('the scroll contract', () => {
     expect(decl).toMatch(/min-height:\s*0/)
   })
 
-  test('there is exactly one scroll owner in the signed-in shell', () => {
-    const owners = [...(app() + shell()).matchAll(/([^{}]+)\{[^}]*overflow-y:\s*auto[^}]*\}/g)]
+  test('one scroll owner per interactive layer: <main>, and the body of an open sheet', () => {
+    // A modal sheet makes the page behind it inert, so it may own a scroller
+    // of its own; nothing else may.
+    const owners = [...everySheet().matchAll(/([^{}]+)\{[^}]*overflow-y:\s*auto[^}]*\}/g)]
       .map((m) => m[1]!.trim().split('\n').pop()!.trim())
       // The login screen is its own page and never coexists with the shell.
       .filter((sel) => !sel.startsWith('.login'))
-    expect(owners).toEqual(['.app__main'])
+    expect(owners.sort()).toEqual(['.app__main', '.sheet__body'])
+  })
+
+  test('a sheet undoes the browser’s dialog styles, and is laid out only while open', () => {
+    const sheet = shell()
+    const base = rule(sheet, '.sheet')
+    // Clipped to itself, so only .sheet__body scrolls. Token colours, because
+    // the UA's CanvasText is black on the dark theme; and no UA max-width,
+    // which would centre a 282px box on a phone.
+    expect(base).toMatch(/overflow:\s*hidden/)
+    expect(base).toMatch(/(^|[;\s])color:\s*var\(--/)
+    expect(base).toMatch(/(^|[;\s])background:\s*var\(--/)
+    expect(base).toMatch(/max-width:\s*none/)
+
+    // A display on the dialog itself would show a closed one; it waits for [open].
+    const onTheDialog = [...sheet.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .map((m) => ({ selector: m[1]!.trim().split('\n').pop()!.trim(), body: m[2]! }))
+      .filter(({ selector }) => /^\.sheet(--[\w-]+)?$/.test(selector))
+    expect(onTheDialog.map(({ selector }) => selector)).toContain('.sheet')
+    for (const { selector, body } of onTheDialog) {
+      expect(body, `${selector} must not set display`).not.toMatch(/(^|[;\s])display:/)
+    }
+    expect(rule(sheet, '.sheet[open]')).toMatch(/display:\s*flex/)
   })
 
   test('bottom clearance is derived once, and reused for scrolling', () => {
@@ -71,10 +95,6 @@ describe('the scroll contract', () => {
     expect(decl).toMatch(/var\(--update-h\)/)
     expect(decl).toMatch(/var\(--fab-height\)/)
     expect(decl).not.toMatch(/--overlay-clearance:[^;]*--dock-height/)
-  })
-
-  test('a visible snackbar widens the clearance rather than overlapping content', () => {
-    expect(app()).toMatch(/\.app:has\(\.snackbar\)[^{]*\{[^}]*--overlay-clearance:/)
   })
 
   test('the dock participates in layout instead of floating over the scroller', () => {
