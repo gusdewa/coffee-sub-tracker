@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { ApiError, type AllocationView } from '../api/client'
 import { PutBackIcon } from './icons'
 
@@ -46,11 +47,42 @@ export function PunchCard({
   })
   const label = batchLabel || 'Subscription'
 
+  /*
+   * Put Back goes from under the finger once it works (or is refused). Focus
+   * dropped on <body> is lost to a keyboard or screen reader, so the card's
+   * own title picks it up — only after this card's button was pressed, so an
+   * offer that merely lapses never moves anyone's focus.
+   */
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const pressed = useRef(false)
+  useEffect(() => {
+    if (canPutBack || !pressed.current) return
+    pressed.current = false
+    const active = document.activeElement
+    if (active === null || active === document.body) titleRef.current?.focus()
+  }, [canPutBack])
+
   return (
     <article className={`card${isNext ? ' card--next' : ''}${remaining === 0 ? ' card--spent' : ''}`}>
       <header className="card__head">
-        <h3 className="card__title">{label}</h3>
-        <span className="card__date">{date}</span>
+        <h3 className="card__title" ref={titleRef} tabIndex={-1}>
+          {label}
+        </h3>
+        {canPutBack && (
+          <button
+            type="button"
+            className="card__put-back"
+            aria-label={`Put back cup from ${label}`}
+            title={`Put back cup from ${label}`}
+            onClick={() => {
+              pressed.current = true
+              onPutBack?.()
+            }}
+            disabled={putBackBusy}
+          >
+            <PutBackIcon />
+          </button>
+        )}
       </header>
 
       {tooMany ? (
@@ -62,8 +94,11 @@ export function PunchCard({
       )}
 
       <p className="card__count">
-        <span className="visually-hidden">{remaining} of {granted} cups remaining from {batchLabel}</span>
-        <span aria-hidden="true" className="tabular">{remaining}/{granted}</span>
+        <span className="card__meta">
+          <span className="card__date">{date}</span>
+          <span aria-hidden="true" className="tabular">{` · ${remaining}/${granted}`}</span>
+          <span className="visually-hidden">{remaining} of {granted} cups remaining from {batchLabel}</span>
+        </span>
         {isNext && remaining > 0 && <span className="card__next">next</span>}
       </p>
 
@@ -71,19 +106,6 @@ export function PunchCard({
         <p className="put-back-error card__put-back-error" role="alert">
           {putBackErrorCopy(putBackError)}
         </p>
-      )}
-
-      {canPutBack && (
-        <button
-          type="button"
-          className="card__put-back"
-          aria-label={`Put back cup from ${label}`}
-          title={`Put back cup from ${label}`}
-          onClick={onPutBack}
-          disabled={putBackBusy}
-        >
-          <PutBackIcon />
-        </button>
       )}
     </article>
   )

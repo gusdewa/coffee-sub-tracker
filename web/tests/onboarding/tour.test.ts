@@ -92,6 +92,14 @@ describe('the steps', () => {
     expect(targets).toContain('balance')
     expect(targets).toContain('drink')
   })
+
+  test('the History step promises the real Put Back window, not the old 10 seconds', () => {
+    const history = tour.TOUR_STEPS.find((s) => s.target === 'nav-history')!
+    expect(history.body).toBe(
+      'Every cup is listed here. Your latest cup can be put back until the end of the day.',
+    )
+    expect(tour.TOUR_STEPS.map((s) => s.body).join(' ')).not.toMatch(/seconds/i)
+  })
 })
 
 describe('the tour configuration', () => {

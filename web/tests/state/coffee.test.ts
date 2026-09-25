@@ -552,6 +552,51 @@ describe('the coffee store', () => {
     expect(seen.every((s) => (s.undo === null) === (s.receipt?.status === 'putBack'))).toBe(true)
   })
 
+  test.each([
+    ['the server confirms it', () => undoCall.mockResolvedValueOnce({ remainingTotal: 5 })],
+    [
+      'the server says it is already back',
+      () => undoCall.mockRejectedValueOnce(new ApiError('ALREADY_UNDONE', 'already undone', 409)),
+    ],
+  ])('when %s, the cup goes back on its own card in the same update as the balance', async (_label, answer) => {
+    drinkCall.mockResolvedValue(drinkResult())
+    await store.loadMe()
+    // /api/me stays out, so only the store's own patch can move the card.
+    me.mockReturnValue(new Promise(() => {}))
+    await store.drink()
+    expect(store.getCoffeeState().data?.allocations[0]).toMatchObject({ consumed: 1, remaining: 4 })
+    answer()
+
+    const seen = await published(() => store.undoDrink('op1'))
+
+    const flipped = seen.find((s) => s.receipt?.status === 'putBack')!
+    expect(flipped.data?.totalRemaining).toBe(5)
+    expect(flipped.data?.allocations[0]).toMatchObject({ consumed: 0, remaining: 5 })
+  })
+
+  test('a Put Back finds an older API’s card by batch, and never fills a card past its grant', async () => {
+    // No allocRowKey: the cup is matched to its card by batchId instead.
+    drinkCall.mockResolvedValue(drinkResult({ allocRowKey: undefined, batchId: 'B1' }))
+    undoCall.mockResolvedValueOnce({ remainingTotal: 5 })
+    await store.loadMe()
+    // A refresh already reports the card full again, while the offer is still this cup's.
+    me.mockResolvedValue({
+      ...balance(5),
+      undoOffer: {
+        opId: 'op1', batchLabel: 'September beans', allocRowKey: '', batchId: 'B1',
+        createdAt: new Date().toISOString(),
+        undoExpiresAt: new Date(Date.now() + 90_000).toISOString(),
+      },
+    })
+    await store.drink()
+    await vi.waitFor(() => expect(store.getCoffeeState().data?.allocations[0]?.remaining).toBe(5))
+    me.mockReturnValue(new Promise(() => {}))
+
+    expect(await store.undoDrink('op1')).toBe(true)
+
+    expect(store.getCoffeeState().data?.allocations[0]).toMatchObject({ consumed: 0, remaining: 5 })
+  })
+
   test('ALREADY_UNDONE is the server saying the cup is back: put back, and ask /api/me', async () => {
     drinkCall.mockResolvedValue(drinkResult())
     await store.loadMe()

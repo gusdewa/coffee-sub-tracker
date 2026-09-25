@@ -43,6 +43,28 @@
   --shadow-lift: 0 10px 24px rgb(23 32 42 / 0.18);
 
   /*
+   * Motion. Every duration in the app is named here; the rest of the CSS only
+   * refers to these (tests/styles/motion.test.ts). Feedback stays brief and
+   * never makes anyone wait: the whole success cup is over inside
+   * --dur-celebrate, and every control works from the first frame.
+   */
+  --dur-press: 120ms;
+  --dur-pill: 140ms;
+  --dur-pulse: 1.4s;
+  --dur-sheet: 240ms;
+  --dur-celebrate: 900ms;
+  /* The success cup's timeline, as offsets into --dur-celebrate. */
+  --delay-steam: 200ms;
+  --stagger-steam: 120ms;
+  --dur-steam: 440ms;
+  --delay-spark: 360ms;
+  --dur-spark: 340ms;
+  --delay-hole: 600ms;
+  --dur-hole: 200ms;
+  /* Decelerates hard: things arrive quickly and settle, never bounce. */
+  --ease-out: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /*
    * Fluid steps. The viewport range that matters is 320-430px: a fixed scale
    * reads cramped on an SE and undersized on a Pro Max. Each step interpolates
    * between those, then settles so desktop never inflates.
@@ -193,6 +215,10 @@ button {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    /* 0s, not 0.01ms: that still started a transition on every element. */
+    transition-duration: 0s !important;
+    /* A zero-length animation still waits out its delay before it paints. */
+    animation-delay: 0s !important;
+    transition-delay: 0s !important;
   }
 }

@@ -4,6 +4,7 @@ import {
   OfflineError,
   UnconfirmedDrinkError,
   api,
+  type AllocationView,
   type DrinkResponse,
   type MeResponse,
 } from '../api/client'
@@ -216,6 +217,16 @@ function reconcile(): void {
   void (earlier ? earlier.then(run) : run())
 }
 
+/** The card a cup came off: by row key, or by batch from an older API. */
+function isCupsCard(
+  allocation: AllocationView,
+  cup: Pick<UndoOffer, 'allocRowKey' | 'batchId'>,
+): boolean {
+  return cup.allocRowKey
+    ? allocation.allocRowKey === cup.allocRowKey
+    : cup.batchId !== '' && allocation.batchId === cup.batchId
+}
+
 /** Whether the browser still believes it is online; unknown counts as online. */
 function browserOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false
@@ -242,9 +253,7 @@ export async function drink(
     const allocRowKey = result.allocRowKey || ''
     const batchId = result.batchId || ''
     const allocations = state.data.allocations.map((allocation) =>
-      (allocRowKey
-        ? allocation.allocRowKey === allocRowKey
-        : batchId !== '' && allocation.batchId === batchId)
+      isCupsCard(allocation, { allocRowKey, batchId })
         ? {
             ...allocation,
             consumed: allocation.consumed + 1,
@@ -305,15 +314,38 @@ export async function drink(
   }
 }
 
-/** The cup is back, by our request or by the server's account of it. */
-function markPutBack(opId: string, remainingTotal?: number): void {
+/**
+ * The cup is back, by our request or by the server's account of it.
+ *
+ * Its own card gets the cup back in the same update as the balance, so the
+ * summary's card line never disagrees with the total while /api/me is out.
+ * Without a total from the server (ALREADY_UNDONE), the one cup this offer
+ * held is added back — only when its card is known and not already full again,
+ * since that card is what the balance was patched against when the Drink landed.
+ */
+function markPutBack(offer: UndoOffer, remainingTotal?: number): void {
   clearUndoTimer()
   const { data, receipt } = state
+  let returned = false
+  const allocations = (data?.allocations ?? []).map((allocation) => {
+    // A card already full again (a refresh got there first) has nothing to take back.
+    if (!isCupsCard(allocation, offer) || allocation.remaining >= allocation.granted) return allocation
+    returned = true
+    return {
+      ...allocation,
+      consumed: Math.max(0, allocation.consumed - 1),
+      remaining: allocation.remaining + 1,
+    }
+  })
   set({
-    data: data && remainingTotal !== undefined ? { ...data, totalRemaining: remainingTotal } : data,
+    data: data && {
+      ...data,
+      allocations,
+      totalRemaining: remainingTotal ?? data.totalRemaining + (returned ? 1 : 0),
+    },
     undo: null,
     revision: state.revision + 1,
-    receipt: receipt?.opId === opId ? { ...receipt, status: 'putBack' } : receipt,
+    receipt: receipt?.opId === offer.opId ? { ...receipt, status: 'putBack' } : receipt,
     undoError: null,
   })
   void loadMe()
@@ -337,14 +369,14 @@ export async function undoDrink(expectedOpId?: string): Promise<boolean> {
   set({ busy: true, undoError: null })
   try {
     const result = await api.undo(offer.opId, crypto.randomUUID())
-    markPutBack(offer.opId, result.remainingTotal)
+    markPutBack(offer, result.remainingTotal)
     return true
   } catch (err) {
     const error = err as Error
     if (error instanceof ApiError && error.code === 'ALREADY_UNDONE') {
       // The server is authoritative: this exact cup is already back, perhaps
       // from another device or a retry whose first answer was lost.
-      markPutBack(offer.opId)
+      markPutBack(offer)
       return true
     }
     if (

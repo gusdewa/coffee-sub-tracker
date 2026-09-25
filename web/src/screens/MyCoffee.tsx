@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { AllocationView } from '../api/client'
 import { useCoffee, loadMe, undoDrink, type UndoOffer } from '../state/coffee'
+import { PaceCard } from '../components/PaceCard'
 import { PunchCard } from '../components/PunchCard'
+import { SafeSection } from '../components/SafeSection'
 import { Skeleton } from '../components/Skeleton'
 import { ErrorState } from '../components/ErrorState'
 
@@ -101,6 +103,11 @@ export function MyCoffee() {
           </div>
         </section>
       )}
+
+      {/* An extra: a bug in it must never take the balance or the cards down. */}
+      <SafeSection>
+        <PaceCard />
+      </SafeSection>
     </div>
   )
 }

@@ -5,13 +5,8 @@ import { SafeSection } from '../components/SafeSection'
 import { SuccessCup } from '../components/SuccessCup'
 import { ChatIcon, PutBackIcon } from '../components/icons'
 import { NEWER_CUP_COPY, putBackErrorCopy } from '../components/PunchCard'
-import {
-  formatUndoDeadline,
-  jakartaWeekday,
-  lastSevenDays,
-  receiptDayCount,
-  type Week,
-} from '../insights/recent'
+import { RecentBars } from '../components/RecentBars'
+import { formatUndoDeadline, lastSevenDays, receiptDayCount } from '../insights/recent'
 import { buildShareMessage } from '../sharing/whatsapp'
 import { dismissReceipt, undoDrink, useCoffee, type DrinkReceipt } from '../state/coffee'
 import { useHistory, type HistorySnapshot } from '../state/history'
@@ -327,7 +322,9 @@ function RecentActivity({ receipt, history }: { receipt: DrinkReceipt; history: 
   const titleId = useId()
   // Static on purpose: a pulsing skeleton inside a sheet that just animated in
   // is motion for its own sake, and this box only holds the space.
-  if (history.loading) return <div className="sheet__recent sheet__recent--pending" aria-hidden="true" />
+  if (history.loading) {
+    return <div className="sheet__recent sheet__recent--pending" aria-hidden="true" aria-busy="true" />
+  }
   if (!history.items) return null
 
   const now = Date.now()
@@ -343,22 +340,8 @@ function RecentActivity({ receipt, history }: { receipt: DrinkReceipt; history: 
       <p className="sheet__recent-count">
         {`${day.cups} ${cups(day.cups)} ${day.isToday ? 'today' : `on ${day.weekday}`}`}
       </p>
-      {week.kind === 'known' && <RecentWeekSlot week={week} />}
+      {/* The bars carry their own sentence for a screen reader; nothing here repeats it. */}
+      {week.kind === 'known' && <RecentBars days={week.days} />}
     </section>
   )
-}
-
-/**
- * The slot the seven-day bars (RecentBars) fill. Until they land it carries
- * their text alternative only, so the week is already there for a screen
- * reader and the bars can arrive without changing what is announced.
- */
-function RecentWeekSlot({ week }: { week: Extract<Week, { kind: 'known' }> }) {
-  const days = week.days.map((d) =>
-    d.isToday
-      ? `today ${d.cups} ${cups(d.cups)}`
-      : // The key is the Jakarta date, so its UTC midnight names the right weekday.
-        `${jakartaWeekday(Date.parse(d.key), 'short')} ${d.cups}`,
-  )
-  return <p className="visually-hidden">{`Last 7 days: ${days.join(', ')}`}</p>
 }

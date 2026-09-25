@@ -522,13 +522,19 @@ describe('Share to WhatsApp', () => {
 })
 
 describe('recent activity', () => {
-  test('counts today’s cups, with the week as text for the bars to come', async () => {
+  test('counts today’s cups, and draws the week as bars read out once as a sentence', async () => {
     const { dialog } = await drinkAndOpen()
 
     expect(await within(dialog).findByText('2 cups today')).toBeInTheDocument()
-    const week = within(dialog).getByText(/^Last 7 days:/)
-    expect(week).toHaveClass('visually-hidden')
-    expect(week.textContent).toMatch(/^Last 7 days: (\S+ 0, ){6}today 2 cups$/)
+    const chart = dialog.querySelector('.sheet__recent .recent-bars svg')
+    expect(chart).not.toBeNull()
+    expect(chart).toHaveAttribute('aria-hidden', 'true')
+    expect(chart!.querySelectorAll('.recent-bars__bar')).toHaveLength(7)
+    // One sentence for the week, not one from the sheet and another from the bars.
+    const week = within(dialog).getAllByText(/^Last 7 days:/)
+    expect(week).toHaveLength(1)
+    expect(week[0]).toHaveClass('visually-hidden')
+    expect(week[0]!.textContent).toMatch(/^Last 7 days: (\S+ 0, ){6}today 2 cups\.$/)
   })
 
   test('is left out when the page does not hold this cup', async () => {
@@ -558,6 +564,8 @@ describe('recent activity', () => {
     const placeholder = dialog.querySelector('.sheet__recent--pending')
     expect(placeholder).not.toBeNull()
     expect(placeholder).toHaveAttribute('aria-hidden', 'true')
+    // What the e2e settle helper waits on before it measures the sheet.
+    expect(placeholder).toHaveAttribute('aria-busy', 'true')
     expect(placeholder).not.toHaveClass('skeleton')
     expect(within(dialog).queryByText(/cups? today/)).toBeNull()
   })

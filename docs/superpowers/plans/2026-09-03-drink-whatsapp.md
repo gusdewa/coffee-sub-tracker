@@ -1,3 +1,5 @@
+> Superseded by [2026-09-25-post-drink-summary-design.md](../specs/2026-09-25-post-drink-summary-design.md). The automatic WhatsApp handoff described here was removed: it opened a blank tab on phones.
+
 # Drink Refresh and WhatsApp Handoff Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

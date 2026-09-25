@@ -220,7 +220,7 @@
   width: 3.25rem;
   height: 1.875rem;
   border-radius: var(--radius-pill);
-  transition: background-color 140ms ease;
+  transition: background-color var(--dur-pill) ease;
 }
 
 .dock__link.active {
@@ -293,7 +293,7 @@
    * and while it was mid-fade its label genuinely failed contrast, which is how
    * axe found it.
    */
-  transition: scale 120ms ease;
+  transition: scale var(--dur-press) ease;
 }
 
 .fab:hover:not(:disabled) {
@@ -498,14 +498,18 @@
   margin-bottom: var(--gap-s);
 }
 
-/* The card's Put Back floats bottom-right; its reason must not run under it. */
+/* The card's own padding already keeps its Put Back column clear. */
 .card .put-back-error {
   margin: var(--gap-xs) 0 0;
-  padding-inline-end: calc(44px + var(--gap-s));
 }
 
+/* Tall enough for its title, count and bars, so the answer does not shift the sheet. */
 .sheet__recent {
-  min-height: 4.5rem;
+  min-height: 8rem;
+  margin-top: var(--gap-xs);
+}
+
+.sheet__recent .recent-bars {
   margin-top: var(--gap-xs);
 }
 
@@ -576,7 +580,8 @@
 }
 
 /* list-item keeps the disclosure triangle; min-height makes it a real target. */
-.sheet summary {
+.sheet summary,
+.pace summary {
   display: list-item;
   min-height: 44px;
   padding-block: 10px;
@@ -651,6 +656,87 @@
 @media (prefers-reduced-motion: reduce) {
   .fab:active:not(:disabled) {
     scale: 1;
+  }
+}
+
+/*
+ * The success moment and the sheet's arrival, only for those who have not
+ * asked for less motion. Each animation runs *into* the base styles above —
+ * the final frame — with fill-mode both, so before its delay a part waits in
+ * its first frame and afterwards holds its last. Everything is over inside
+ * --dur-celebrate, and nothing here gates a control.
+ *
+ *   0–240ms    the cup pops in (scale 0.85 → 1, fading in)
+ *   200–760ms  the steam draws upwards, the second stroke 120ms behind
+ *   360–700ms  three sparks drift out and fade
+ *   600–800ms  the hole is punched through
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .sheet[open] {
+    animation: sheet-in var(--dur-sheet) var(--ease-out) both;
+  }
+
+  .success-cup {
+    animation: success-cup-pop var(--dur-sheet) var(--ease-out) both;
+  }
+
+  .success-cup__steam {
+    animation: success-cup-steam var(--dur-steam) var(--ease-out) var(--delay-steam) both;
+  }
+
+  .success-cup__steam ~ .success-cup__steam {
+    animation-delay: calc(var(--delay-steam) + var(--stagger-steam));
+  }
+
+  .success-cup__spark {
+    animation: success-cup-spark var(--dur-spark) var(--ease-out) var(--delay-spark) both;
+  }
+
+  .success-cup__hole {
+    animation: success-cup-hole var(--dur-hole) var(--ease-out) var(--delay-hole) both;
+  }
+
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(1.5rem);
+    }
+  }
+
+  @keyframes success-cup-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+  }
+
+  @keyframes success-cup-steam {
+    from {
+      stroke-dashoffset: 1;
+    }
+  }
+
+  /* Starts and ends invisible: the final frame has no sparks. */
+  @keyframes success-cup-spark {
+    from {
+      opacity: 0;
+      transform: translate(0, 0);
+    }
+
+    30% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+      transform: translate(3px, -3px);
+    }
+  }
+
+  @keyframes success-cup-hole {
+    from {
+      opacity: 0;
+    }
   }
 }
 
@@ -837,7 +923,7 @@
   font-size: var(--step-0);
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color var(--dur-press) ease, background-color var(--dur-press) ease;
 }
 
 .login__cta:hover:not(:disabled) {
