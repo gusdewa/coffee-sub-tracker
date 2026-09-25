@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api, type HistoryItem } from '../api/client'
-import { useCoffeeRevision } from '../state/coffee'
+import { useHistory } from '../state/history'
 import { Skeleton } from '../components/Skeleton'
 import { ErrorState } from '../components/ErrorState'
 
@@ -12,26 +10,12 @@ const VERB: Record<string, string> = {
 }
 
 export function History() {
-  const [items, setItems] = useState<HistoryItem[] | null>(null)
-  const [error, setError] = useState<Error | null>(null)
+  // The shared page re-reads when a cup is taken or put back anywhere in the
+  // app, or on another device; without it this screen keeps showing a number
+  // the FAB has already changed. The rows stay up while it re-reads.
+  const { items, error, refresh } = useHistory()
 
-  const load = useCallback(async () => {
-    try {
-      setError(null)
-      setItems((await api.history()).items)
-    } catch (err) {
-      setError(err as Error)
-    }
-  }, [])
-
-  // Re-reads when a cup is taken or put back anywhere in the app; without it
-  // this screen keeps showing a number the FAB has already changed.
-  const revision = useCoffeeRevision()
-  useEffect(() => {
-    void load()
-  }, [load, revision])
-
-  if (error) return <ErrorState error={error} onRetry={load} />
+  if (error) return <ErrorState error={error} onRetry={refresh} />
   if (!items) return <Skeleton />
 
   return (

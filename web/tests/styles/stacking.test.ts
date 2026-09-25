@@ -8,8 +8,10 @@ import { resolve } from 'node:path'
  * Before this, the whole app had two z-indexes — `.action` at 2 and `.update`
  * at 60 — and `.nav` had none at all. Both fixed layers were pinned to the same
  * `bottom`, so the update toast landed on top of the Drink button. A dock, a
- * FAB, a snackbar, a menu and a tour overlay cannot be reasoned about one
+ * FAB, a menu, a tour overlay and a sheet cannot be reasoned about one
  * declaration at a time, so the ladder lives in tokens and nothing may opt out.
+ * (A sheet shown with showModal() is in the top layer, above every z-index;
+ * --z-dialog is for the non-modal fallback.)
  */
 
 const css = (name: string) =>
@@ -22,7 +24,6 @@ const LADDER = [
   '--z-header',
   '--z-dock',
   '--z-fab',
-  '--z-snackbar',
   '--z-update',
   '--z-menu',
   '--z-tour',

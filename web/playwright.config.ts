@@ -18,7 +18,7 @@ import { defineConfig, devices } from '@playwright/test'
  * builds twice and drives a real worker, does not repeat on four more projects.
  */
 const UPDATE = /update-lifecycle\.spec\.ts/
-const SHELL = /(shell|login-home)\.spec\.ts/
+const SHELL = /(shell|login-home|drink-sheet)\.spec\.ts/
 
 export default defineConfig({
   testDir: './e2e',

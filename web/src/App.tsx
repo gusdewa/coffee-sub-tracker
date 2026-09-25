@@ -8,7 +8,7 @@ import { useOnboarding } from './onboarding/useOnboarding'
 import { AppHeader } from './shell/AppHeader'
 import { Dock } from './shell/Dock'
 import { DrinkFab } from './shell/DrinkFab'
-import { UndoSnackbar } from './shell/UndoSnackbar'
+import { DrinkSummarySheet } from './shell/DrinkSummarySheet'
 import { MyCoffee } from './screens/MyCoffee'
 import { AllBalances } from './screens/AllBalances'
 import { Subscriptions } from './screens/Subscriptions'
@@ -17,6 +17,7 @@ import { QaRedeem } from './screens/QaRedeem'
 import { AdminMembers } from './screens/AdminMembers'
 import { ClaimIdentity } from './screens/ClaimIdentity'
 import { OfflineBanner } from './components/OfflineBanner'
+import { SafeSection } from './components/SafeSection'
 import { SignIn } from './screens/SignIn'
 
 export function App() {
@@ -136,15 +137,22 @@ export function App() {
       {signedIn && (
         <>
           {/*
-            One fixed row above the dock. The snackbar takes its own line so the
-            Drink action never has to compete with it for width at 320px, and the
-            whole row is pointer-events:none so only the controls are tappable.
+            One fixed row above the dock. The whole row is pointer-events:none
+            so only the controls are tappable.
           */}
           <div className="stack">
-            <UndoSnackbar />
             <DrinkFab />
           </div>
           <Dock />
+          {/*
+            Rendered into document.body as a modal <dialog>, so where it sits
+            here only decides when it exists. Guarded: the Drink is already
+            recorded when this opens, and a bug in the summary must not take
+            Home — or the update prompt beside <App/> — down with it.
+          */}
+          <SafeSection>
+            <DrinkSummarySheet />
+          </SafeSection>
         </>
       )}
     </div>

@@ -59,7 +59,7 @@
   --gap-s: 0.75rem;
   --gap-m: 1.25rem;
   --gap-l: 2rem;
-  /* The rhythm of the fixed bottom stack: dock -> FAB -> snackbar -> update. */
+  /* The rhythm of the fixed bottom stack: dock -> FAB -> update. */
   --gap-stack: 0.5rem;
 
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -71,9 +71,8 @@
    * without anything above it being measured by hand.
    */
   --dock-height: 4.25rem;
-  /* The floating layers, so bottom clearance can be computed rather than guessed. */
+  /* The floating layer, so bottom clearance can be computed rather than guessed. */
   --fab-height: 3.25rem;
-  --snackbar-height: 3.5rem;
   /* The content column, previously a 34rem literal repeated in four rules. */
   --column: 34rem;
 
@@ -92,12 +91,16 @@
   --z-header: 20;
   --z-dock: 30;
   --z-fab: 40;
-  --z-snackbar: 50;
   --z-update: 60;
   --z-menu: 70;
   --z-tour: 80;
   /* The spotlight mask, and the card that has to sit on top of it. */
   --z-tour-card: 81;
+  /*
+   * Only for a sheet the browser could not open as a modal. showModal() puts
+   * a sheet in the top layer, above every z-index here, which is what keeps
+   * the update prompt and the fixed stack from ever painting over it.
+   */
   --z-dialog: 90;
 
   /*

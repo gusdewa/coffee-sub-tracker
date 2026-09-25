@@ -18,14 +18,6 @@
   );
 }
 
-/* A visible undo takes its own line, so the content has to clear that too. */
-.app:has(.snackbar) {
-  --overlay-clearance: calc(
-    var(--update-h) + var(--fab-height) + var(--snackbar-height) + 2 * var(--gap-stack) +
-      var(--gap-m)
-  );
-}
-
 .app__main {
   flex: 1 1 auto;
   /* Without this a flex child refuses to shrink, and the document scrolls

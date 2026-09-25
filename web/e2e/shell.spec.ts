@@ -137,29 +137,32 @@ test('a cup can be taken once, warned before a second, and put back from its car
   await page.locator('.dock a', { hasText: 'History' }).click()
   await expect(page.locator('.dock a.active')).toContainText('History')
 
+  // Success is the summary sheet, and nothing else: Drink itself never opens a
+  // page or asks wa.me for anything. Sharing is a separate, explicit tap.
   await page.locator('.fab').click()
-  await expect(page.locator('.snackbar')).toHaveText('Drink 1')
+  const sheet = page.getByRole('dialog', { name: 'Drink 1' })
+  await expect(sheet).toBeVisible()
   expect(api.drinks()).toBe(1)
-  await expect.poll(() => api.whatsappHandoffs()).toHaveLength(1)
-  await expect.poll(() => api.handoffSuccessText()).toEqual(['Drink 1'])
-  const message = decodeURIComponent(new URL(api.whatsappHandoffs()[0]!).searchParams.get('text')!)
-  expect(message).toContain('Cart Coffee')
-  expect(message).toContain('Dewa Wijaya drank 1 cup')
-  expect(message).toContain('Dewa Wijaya: 4 cups')
-  expect(message).toContain('Total remaining: 4 cups')
+  expect(api.whatsappRequests()).toBe(0)
+  expect(api.pageCount()).toBe(1)
+  await sheet.getByRole('button', { name: 'Done' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 
-  // A second intent warns before it can reserve another popup or mutate.
+  // A second intent warns before it can mutate.
   await page.locator('.fab').click()
-  const warning = page.getByRole('alertdialog', { name: /drink another/i })
+  const warning = page.getByRole('alertdialog', { name: 'Drink another?' })
   await expect(warning).toBeVisible()
   await expect(warning.getByRole('button', { name: 'Cancel' })).toBeFocused()
   expect(api.drinks()).toBe(1)
-  expect(api.whatsappHandoffs()).toHaveLength(1)
   await warning.getByRole('button', { name: 'Cancel' }).click()
+  await expect(warning).toHaveCount(0)
+  expect(api.drinks()).toBe(1)
+  expect(api.whatsappRequests()).toBe(0)
 
-  // The PWA document survives the handoff. The 10-second success is transient,
-  // but recovery stays on the exact personal card for the server-backed window.
+  // The PWA document never went anywhere, and recovery stays on the exact
+  // personal card for the server-backed window — not for a few seconds.
   expect(page.url()).toContain(server.url)
+  expect(api.pageCount()).toBe(1)
   await page.locator('.dock a', { hasText: 'Mine' }).click()
   const putBack = page.getByRole('button', { name: 'Put back cup from September beans' })
   await expect(putBack).toBeVisible()
@@ -167,13 +170,14 @@ test('a cup can be taken once, warned before a second, and put back from its car
   expect(target.width).toBeGreaterThanOrEqual(44)
   expect(target.height).toBeGreaterThanOrEqual(44)
   await page.clock.fastForward(10_100)
-  await expect(page.locator('.snackbar')).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(putBack).toBeVisible()
   await shot(page, '22-shell-put-back-on-card', info.project.name)
 
   await putBack.click()
   await expect.poll(() => api.undos()).toBe(1)
   await expect(putBack).toHaveCount(0)
+  expect(api.whatsappRequests()).toBe(0)
 })
 
 test('a morning drink is recoverable from its exact card after reopening the app', async ({ page }) => {
@@ -185,17 +189,6 @@ test('a morning drink is recoverable from its exact card after reopening the app
   await expect.poll(() => api.undos()).toBe(1)
   await expect(page.locator('.slip__number')).toHaveText('5')
   await expect(putBack).toHaveCount(0)
-})
-
-test('the snackbar and the Drink action never overlap', async ({ page }) => {
-  await signedInShell(page, server.url)
-  await page.locator('.fab').click()
-  await expect(page.locator('.snackbar')).toBeVisible()
-
-  const fab = (await page.locator('.fab').boundingBox())!
-  const bar = (await page.locator('.snackbar').boundingBox())!
-  // The snackbar takes its own line above the action rather than sharing it.
-  expect(bar.y + bar.height).toBeLessThanOrEqual(fab.y + 1)
 })
 
 test('the Drink action rides above the update prompt when one appears', async ({ page }) => {

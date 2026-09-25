@@ -116,6 +116,18 @@ export function PutBackIcon({ size = 22 }: IconProps) {
   )
 }
 
+/**
+ * A plain speech bubble, for Share to WhatsApp. Deliberately not WhatsApp's
+ * brand mark: the link's own words already name the destination.
+ */
+export function ChatIcon({ size = 20 }: IconProps) {
+  return (
+    <svg {...base} width={size} height={size}>
+      <path d="M5.9 4.6h12.2a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-7.4l-4.4 3.6v-3.6h-.4a2 2 0 0 1-2-2V6.6a2 2 0 0 1 2-2Z" />
+    </svg>
+  )
+}
+
 export function ManageIcon({ size = 18 }: IconProps) {
   return (
     <svg {...base} width={size} height={size}>
