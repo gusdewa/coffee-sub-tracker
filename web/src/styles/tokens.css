@@ -186,6 +186,16 @@ body {
   border-radius: 4px;
 }
 
+/*
+ * Headings that take focus only so a screen reader starts reading there (the
+ * summary sheet's title, a card title after Put Back) are not controls and are
+ * never in the tab order. WebKit still paints a focus ring on them after a
+ * programmatic focus, which read as a stray box around "Drink 1".
+ */
+[tabindex='-1']:focus {
+  outline: none;
+}
+
 button {
   font: inherit;
   color: inherit;
