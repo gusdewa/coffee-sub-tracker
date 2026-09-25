@@ -244,7 +244,12 @@ test.describe('post-Drink summary sheet', () => {
     const [popup] = await Promise.all([context.waitForEvent('page'), share.click()])
     await popup.waitForURL(/^https:\/\/wa\.me\/\?text=/)
     expect(popup.url()).toMatch(/^https:\/\/wa\.me\/\?text=/)
-    expect(await popup.opener(), 'the WhatsApp page cannot reach back into the app').toBeNull()
+    // Playwright's popup.opener() reports which page *created* the popup, even
+    // under rel=noopener; what matters is the popup's own window.opener.
+    expect(
+      await popup.evaluate(() => window.opener),
+      'the WhatsApp page cannot reach back into the app',
+    ).toBeNull()
     await expect.poll(() => api.whatsappRequests()).toBe(1)
     expect(api.whatsappTexts()).toEqual([preview])
     expect(api.drinks(), 'sharing never counts a cup').toBe(1)
